@@ -1,0 +1,17 @@
+# Build artifacts
+.DS_Store
+DerivedData/
+build/
+*.xcodeproj/xcuserdata/
+*.xcodeproj/project.xcworkspace/xcuserdata/
+
+# Generated
+generate_icon.py
+*.iconset/
+debug.log
+
+# Skills/Claude
+skills-lock.json
+.claude/
+.agents/
+.factory/

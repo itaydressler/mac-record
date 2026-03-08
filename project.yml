@@ -1,0 +1,46 @@
+name: MacRecord
+options:
+  bundleIdPrefix: com.tinyworks
+  deploymentTarget:
+    macOS: "14.0"
+  xcodeVersion: "16.0"
+  generateEmptyDirectories: true
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    MACOSX_DEPLOYMENT_TARGET: "14.0"
+targets:
+  MacRecord:
+    type: application
+    platform: macOS
+    sources:
+      - MacRecord/Sources
+    resources:
+      - MacRecord/Resources
+    info:
+      path: MacRecord/Resources/Info.plist
+      properties:
+        CFBundleName: MacRecord
+        CFBundleDisplayName: MacRecord
+        CFBundleIdentifier: com.tinyworks.MacRecord
+        CFBundleVersion: "1"
+        CFBundleShortVersionString: "1.0"
+        CFBundlePackageType: APPL
+        CFBundleExecutable: MacRecord
+        CFBundleIconFile: AppIcon
+        LSMinimumSystemVersion: "14.0"
+        NSMicrophoneUsageDescription: "MacRecord needs microphone access to record audio during screen capture."
+    entitlements:
+      path: MacRecord/Resources/MacRecord.entitlements
+      properties:
+        com.apple.security.app-sandbox: false
+        com.apple.security.device.audio-input: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.tinyworks.MacRecord
+        INFOPLIST_FILE: MacRecord/Resources/Info.plist
+        CODE_SIGN_ENTITLEMENTS: MacRecord/Resources/MacRecord.entitlements
+        ENABLE_HARDENED_RUNTIME: true
+        CODE_SIGN_IDENTITY: "Developer ID Application: BASE LABS LTD (SDKXSX2NHQ)"
+        DEVELOPMENT_TEAM: SDKXSX2NHQ
+        CODE_SIGN_STYLE: Manual
