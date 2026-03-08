@@ -4,12 +4,14 @@ import SwiftUI
 struct MacRecordApp: App {
     @StateObject private var recordingManager = RecordingManager()
     @StateObject private var recordingsStore = RecordingsStore()
+    @StateObject private var transcriptionManager = TranscriptionManager()
 
     var body: some Scene {
         WindowGroup {
             ContentView()
                 .environmentObject(recordingManager)
                 .environmentObject(recordingsStore)
+                .environmentObject(transcriptionManager)
                 .frame(minWidth: 700, minHeight: 500)
                 .onReceive(recordingManager.$state) { newState in
                     if newState == .recording {
@@ -23,6 +25,6 @@ struct MacRecordApp: App {
                 }
         }
         .windowStyle(.titleBar)
-        .defaultSize(width: 800, height: 600)
+        .defaultSize(width: 900, height: 650)
     }
 }

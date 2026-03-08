@@ -4,108 +4,195 @@ import ScreenCaptureKit
 struct ContentView: View {
     @EnvironmentObject var recordingManager: RecordingManager
     @EnvironmentObject var recordingsStore: RecordingsStore
-    @State private var selectedTab: Tab = .record
-
-    enum Tab: String, CaseIterable {
-        case record = "Record"
-        case recordings = "Recordings"
-    }
+    @EnvironmentObject var transcriptionManager: TranscriptionManager
+    @State private var selectedRecording: Recording?
+    @State private var showSourcePicker = false
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Top bar
-            headerBar
-            Divider()
+        Group {
+            if let recording = selectedRecording {
+                VStack(spacing: 0) {
+                    HStack {
+                        Button {
+                            selectedRecording = nil
+                        } label: {
+                            Label("Back", systemImage: "chevron.left")
+                        }
+                        .buttonStyle(.plain)
+                        Spacer()
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .background(.bar)
+                    Divider()
 
-            // Content
-            Group {
-                switch selectedTab {
-                case .record:
-                    RecordingView()
-                case .recordings:
-                    RecordingsListView()
+                    RecordingDetailView(recording: recording)
                 }
+            } else {
+                mainView
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .environmentObject(recordingManager)
         .environmentObject(recordingsStore)
+        .environmentObject(transcriptionManager)
     }
 
-    private var headerBar: some View {
-        HStack {
-            Picker("", selection: $selectedTab) {
-                ForEach(Tab.allCases, id: \.self) { tab in
-                    Text(tab.rawValue).tag(tab)
+    // MARK: - Main View (Recordings + Record Button)
+
+    private var mainView: some View {
+        ZStack(alignment: .bottom) {
+            VStack(spacing: 0) {
+                // Header
+                HStack {
+                    Text("Recordings")
+                        .font(.title2.weight(.bold))
+
+                    Spacer()
+
+                    if recordingManager.state == .recording {
+                        recordingIndicator
+                    }
+
+                    Button {
+                        recordingsStore.openRecordingsFolder()
+                    } label: {
+                        Image(systemName: "folder")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+                .padding(.horizontal, 24)
+                .padding(.vertical, 14)
+                .background(.bar)
+
+                Divider()
+
+                // Recordings list
+                if recordingsStore.recordings.isEmpty {
+                    emptyState
+                } else {
+                    recordingsList
                 }
             }
-            .pickerStyle(.segmented)
-            .frame(width: 200)
 
+            // Floating record button area
+            if recordingManager.state == .idle && !showSourcePicker {
+                recordButton
+                    .padding(.bottom, 28)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+
+            // Source picker overlay
+            if showSourcePicker {
+                sourcePickerOverlay
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+
+            // Active recording overlay
+            if recordingManager.state == .recording {
+                activeRecordingBar
+                    .padding(.bottom, 28)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(.spring(response: 0.4, dampingFraction: 0.85), value: showSourcePicker)
+        .animation(.spring(response: 0.4, dampingFraction: 0.85), value: recordingManager.state)
+    }
+
+    // MARK: - Recording Indicator (header)
+
+    private var recordingIndicator: some View {
+        HStack(spacing: 8) {
+            Circle()
+                .fill(.red)
+                .frame(width: 8, height: 8)
+                .shadow(color: .red.opacity(0.6), radius: 4)
+            Text(formatTime(recordingManager.elapsedTime))
+                .font(.system(.body, design: .monospaced, weight: .medium))
+                .foregroundStyle(.red)
+        }
+        .padding(.trailing, 8)
+    }
+
+    // MARK: - Empty State
+
+    private var emptyState: some View {
+        VStack(spacing: 16) {
             Spacer()
 
-            if recordingManager.state == .recording {
-                HStack(spacing: 8) {
-                    Circle()
-                        .fill(.red)
-                        .frame(width: 8, height: 8)
-                    Text(formatTime(recordingManager.elapsedTime))
-                        .font(.system(.body, design: .monospaced, weight: .medium))
-                        .foregroundStyle(.red)
-                }
-            }
-        }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 12)
-        .background(.bar)
-    }
+            Image(systemName: "video.slash")
+                .font(.system(size: 48))
+                .foregroundStyle(.quaternary)
+            Text("No Recordings Yet")
+                .font(.title2)
+                .foregroundStyle(.secondary)
+            Text("Hit the record button to get started.")
+                .font(.body)
+                .foregroundStyle(.tertiary)
 
-    private func formatTime(_ interval: TimeInterval) -> String {
-        let hours = Int(interval) / 3600
-        let minutes = (Int(interval) % 3600) / 60
-        let seconds = Int(interval) % 60
-        if hours > 0 {
-            return String(format: "%d:%02d:%02d", hours, minutes, seconds)
-        }
-        return String(format: "%02d:%02d", minutes, seconds)
-    }
-}
-
-// MARK: - Recording View (Source Picker + Controls)
-
-struct RecordingView: View {
-    @EnvironmentObject var recordingManager: RecordingManager
-    @EnvironmentObject var recordingsStore: RecordingsStore
-
-    var body: some View {
-        VStack(spacing: 0) {
-            if recordingManager.state == .recording {
-                activeRecordingView
-            } else {
-                sourcePickerView
-            }
-        }
-    }
-
-    // MARK: - Active Recording
-
-    private var activeRecordingView: some View {
-        VStack(spacing: 24) {
             Spacer()
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
 
-            VStack(spacing: 16) {
-                Image(systemName: "record.circle")
-                    .font(.system(size: 64))
-                    .foregroundStyle(.red)
-                    .symbolEffect(.pulse, isActive: true)
+    // MARK: - Recordings List
 
-                Text(formatTime(recordingManager.elapsedTime))
-                    .font(.system(.largeTitle, design: .monospaced, weight: .bold))
-
-                Text("Recording in progress")
-                    .font(.title3)
-                    .foregroundStyle(.secondary)
+    private var recordingsList: some View {
+        List {
+            ForEach(recordingsStore.recordings) { recording in
+                RecordingRow(recording: recording)
+                    .onTapGesture {
+                        selectedRecording = recording
+                    }
+                    .contextMenu {
+                        Button("Open in Player") { recordingsStore.openRecording(recording) }
+                        ShareLink(item: recording.videoURL)
+                        Button("Reveal in Finder") { recordingsStore.revealInFinder(recording) }
+                        Divider()
+                        Button("Delete", role: .destructive) { recordingsStore.deleteRecording(recording) }
+                    }
             }
+        }
+        .listStyle(.inset(alternatesRowBackgrounds: true))
+    }
+
+    // MARK: - Record Button
+
+    private var recordButton: some View {
+        Button {
+            Task { await recordingManager.refreshAvailableContent() }
+            withAnimation { showSourcePicker = true }
+        } label: {
+            HStack(spacing: 10) {
+                RecordButtonDot()
+                Text("New Recording")
+                    .font(.system(size: 15, weight: .semibold))
+            }
+            .foregroundStyle(.white)
+            .padding(.horizontal, 28)
+            .padding(.vertical, 14)
+            .background(
+                Capsule()
+                    .fill(.red)
+                    .shadow(color: .red.opacity(0.4), radius: 12, y: 4)
+            )
+        }
+        .buttonStyle(.plain)
+        .keyboardShortcut(.init("r"), modifiers: [.command, .shift])
+    }
+
+    // MARK: - Active Recording Bar
+
+    private var activeRecordingBar: some View {
+        HStack(spacing: 16) {
+            Circle()
+                .fill(.red)
+                .frame(width: 10, height: 10)
+                .shadow(color: .red.opacity(0.8), radius: 6)
+
+            Text(formatTime(recordingManager.elapsedTime))
+                .font(.system(.title3, design: .monospaced, weight: .semibold))
 
             Button {
                 Task {
@@ -113,72 +200,160 @@ struct RecordingView: View {
                     recordingsStore.refresh()
                 }
             } label: {
-                Label("Stop Recording", systemImage: "stop.circle.fill")
-                    .font(.title3.weight(.semibold))
-                    .padding(.horizontal, 32)
-                    .padding(.vertical, 12)
+                HStack(spacing: 6) {
+                    Image(systemName: "stop.fill")
+                        .font(.system(size: 10))
+                    Text("Stop")
+                        .font(.system(size: 14, weight: .semibold))
+                }
+                .foregroundStyle(.white)
+                .padding(.horizontal, 18)
+                .padding(.vertical, 8)
+                .background(Capsule().fill(.red))
             }
-            .buttonStyle(.borderedProminent)
-            .tint(.red)
+            .buttonStyle(.plain)
             .keyboardShortcut(.init("s"), modifiers: [.command, .shift])
-
-            Spacer()
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(.horizontal, 24)
+        .padding(.vertical, 12)
+        .background(
+            Capsule()
+                .fill(.ultraThickMaterial)
+                .shadow(color: .black.opacity(0.15), radius: 12, y: 4)
+        )
     }
 
-    // MARK: - Source Picker
+    // MARK: - Source Picker Overlay
 
-    private var sourcePickerView: some View {
+    private var sourcePickerOverlay: some View {
         VStack(spacing: 0) {
-            // Mode picker
-            HStack {
-                Picker("Mode", selection: $recordingManager.recordingMode) {
-                    ForEach(RecordingManager.RecordingMode.allCases, id: \.self) { mode in
-                        Label(mode.rawValue, systemImage: mode == .display ? "display" : "macwindow")
-                            .tag(mode)
+            Spacer()
+
+            VStack(spacing: 0) {
+                // Header
+                HStack {
+                    Text("Choose what to record")
+                        .font(.headline)
+                    Spacer()
+                    Button {
+                        withAnimation { showSourcePicker = false }
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.title2)
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 16)
+                .padding(.bottom, 12)
+
+                Divider()
+
+                // Mode picker
+                HStack {
+                    Picker("Mode", selection: $recordingManager.recordingMode) {
+                        ForEach(RecordingManager.RecordingMode.allCases, id: \.self) { mode in
+                            Label(mode.rawValue, systemImage: mode == .display ? "display" : "macwindow")
+                                .tag(mode)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(width: 220)
+
+                    Spacer()
+
+                    Button {
+                        Task { await recordingManager.refreshAvailableContent() }
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 12)
+
+                Divider()
+
+                // Thumbnail grid
+                ScrollView {
+                    if recordingManager.recordingMode == .display {
+                        displayGrid
+                    } else {
+                        windowGrid
                     }
                 }
-                .pickerStyle(.segmented)
-                .frame(width: 240)
+                .frame(height: 260)
 
-                Spacer()
+                Divider()
 
-                Button {
-                    Task { await recordingManager.refreshAvailableContent() }
-                } label: {
-                    Label("Refresh", systemImage: "arrow.clockwise")
+                // Start button
+                HStack {
+                    if let error = recordingManager.errorMessage {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.yellow)
+                        Text(error)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+
+                    Spacer()
+
+                    if recordingManager.state == .preparingToRecord {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text("Preparing...")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Button {
+                            Task {
+                                withAnimation { showSourcePicker = false }
+                                await recordingManager.startRecording()
+                            }
+                        } label: {
+                            HStack(spacing: 8) {
+                                Circle()
+                                    .fill(.white)
+                                    .frame(width: 10, height: 10)
+                                Text("Start Recording")
+                                    .font(.system(size: 14, weight: .semibold))
+                            }
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 24)
+                            .padding(.vertical, 10)
+                            .background(Capsule().fill(canRecord ? .red : .red.opacity(0.4)))
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(!canRecord)
+                    }
                 }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .disabled(recordingManager.state != .idle)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 14)
             }
-            .padding(.horizontal, 24)
-            .padding(.vertical, 16)
-
-            Divider()
-
-            // Thumbnail grid
-            ScrollView {
-                if recordingManager.recordingMode == .display {
-                    displayGrid
-                } else {
-                    windowGrid
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-            Divider()
-
-            // Bottom bar with record button
-            bottomBar
+            .background(
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(.ultraThickMaterial)
+                    .shadow(color: .black.opacity(0.2), radius: 20, y: -4)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .padding(.horizontal, 16)
+            .padding(.bottom, 16)
         }
+        .background(
+            Color.black.opacity(0.2)
+                .ignoresSafeArea()
+                .onTapGesture {
+                    withAnimation { showSourcePicker = false }
+                }
+        )
     }
 
     // MARK: - Display Grid
 
     private var displayGrid: some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 260, maximum: 360), spacing: 16)], spacing: 16) {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 240, maximum: 340), spacing: 14)], spacing: 14) {
             ForEach(recordingManager.availableDisplays, id: \.displayID) { display in
                 DisplayThumbnailCard(
                     display: display,
@@ -190,7 +365,7 @@ struct RecordingView: View {
                 }
             }
         }
-        .padding(24)
+        .padding(20)
     }
 
     // MARK: - Window Grid
@@ -198,21 +373,21 @@ struct RecordingView: View {
     private var windowGrid: some View {
         Group {
             if recordingManager.availableWindows.isEmpty {
-                VStack(spacing: 12) {
+                VStack(spacing: 10) {
                     Image(systemName: "macwindow.on.rectangle")
-                        .font(.system(size: 40))
+                        .font(.system(size: 32))
                         .foregroundStyle(.quaternary)
                     Text("No windows found")
-                        .font(.headline)
+                        .font(.subheadline)
                         .foregroundStyle(.secondary)
                     Text("Open some windows and tap Refresh")
-                        .font(.subheadline)
+                        .font(.caption)
                         .foregroundStyle(.tertiary)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .padding(.top, 80)
+                .padding(.top, 40)
             } else {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 220, maximum: 300), spacing: 16)], spacing: 16) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 200, maximum: 280), spacing: 14)], spacing: 14) {
                     ForEach(recordingManager.availableWindows, id: \.windowID) { window in
                         WindowThumbnailCard(
                             window: window,
@@ -225,49 +400,9 @@ struct RecordingView: View {
                         }
                     }
                 }
-                .padding(24)
+                .padding(20)
             }
         }
-    }
-
-    // MARK: - Bottom Bar
-
-    private var bottomBar: some View {
-        HStack {
-            if let error = recordingManager.errorMessage {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.yellow)
-                Text(error)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-
-            Spacer()
-
-            if recordingManager.state == .preparingToRecord {
-                ProgressView()
-                    .controlSize(.small)
-                Text("Preparing…")
-                    .foregroundStyle(.secondary)
-            } else {
-                Button {
-                    Task { await recordingManager.startRecording() }
-                } label: {
-                    Label("Start Recording", systemImage: "record.circle")
-                        .font(.headline)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 6)
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(.red)
-                .disabled(!canRecord)
-                .keyboardShortcut(.init("r"), modifiers: [.command, .shift])
-            }
-        }
-        .padding(.horizontal, 24)
-        .padding(.vertical, 14)
-        .background(.bar)
     }
 
     private var canRecord: Bool {
@@ -290,6 +425,31 @@ struct RecordingView: View {
     }
 }
 
+// MARK: - Record Button Dot (animated pulsing)
+
+struct RecordButtonDot: View {
+    @State private var isPulsing = false
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(.white.opacity(0.3))
+                .frame(width: 20, height: 20)
+                .scaleEffect(isPulsing ? 1.4 : 1.0)
+                .opacity(isPulsing ? 0.0 : 0.5)
+
+            Circle()
+                .fill(.white)
+                .frame(width: 12, height: 12)
+        }
+        .onAppear {
+            withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: false)) {
+                isPulsing = true
+            }
+        }
+    }
+}
+
 // MARK: - Display Thumbnail Card
 
 struct DisplayThumbnailCard: View {
@@ -299,7 +459,6 @@ struct DisplayThumbnailCard: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Thumbnail
             ZStack {
                 RoundedRectangle(cornerRadius: 8)
                     .fill(.black)
@@ -318,11 +477,10 @@ struct DisplayThumbnailCard: View {
             .aspectRatio(16/10, contentMode: .fit)
             .clipShape(RoundedRectangle(cornerRadius: 8))
 
-            // Label
             VStack(spacing: 2) {
                 Text("Display \(display.displayID)")
                     .font(.caption.weight(.medium))
-                Text("\(display.width) × \(display.height)")
+                Text("\(display.width) x \(display.height)")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
@@ -352,7 +510,6 @@ struct WindowThumbnailCard: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Thumbnail
             ZStack {
                 RoundedRectangle(cornerRadius: 8)
                     .fill(Color(nsColor: .windowBackgroundColor))
@@ -372,7 +529,6 @@ struct WindowThumbnailCard: View {
             .clipShape(RoundedRectangle(cornerRadius: 8))
             .shadow(color: .black.opacity(0.1), radius: 2, y: 1)
 
-            // Label with app icon
             HStack(spacing: 6) {
                 if let appIcon {
                     Image(nsImage: appIcon)
@@ -409,74 +565,6 @@ struct WindowThumbnailCard: View {
     }
 }
 
-// MARK: - Recordings List
-
-struct RecordingsListView: View {
-    @EnvironmentObject var recordingsStore: RecordingsStore
-
-    var body: some View {
-        Group {
-            if recordingsStore.recordings.isEmpty {
-                emptyState
-            } else {
-                recordingsList
-            }
-        }
-    }
-
-    private var emptyState: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "video.slash")
-                .font(.system(size: 48))
-                .foregroundStyle(.quaternary)
-            Text("No Recordings Yet")
-                .font(.title2)
-                .foregroundStyle(.secondary)
-            Text("Start a recording to see it here.")
-                .font(.body)
-                .foregroundStyle(.tertiary)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    private var recordingsList: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Text("\(recordingsStore.recordings.count) recording\(recordingsStore.recordings.count == 1 ? "" : "s")")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Button {
-                    recordingsStore.openRecordingsFolder()
-                } label: {
-                    Label("Open Folder", systemImage: "folder")
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-            }
-            .padding(.horizontal, 24)
-            .padding(.vertical, 12)
-            .background(.bar)
-
-            Divider()
-
-            List {
-                ForEach(recordingsStore.recordings) { recording in
-                    RecordingRow(recording: recording)
-                        .contextMenu {
-                            Button("Open") { recordingsStore.openRecording(recording) }
-                            ShareLink(item: recording.url)
-                            Button("Reveal in Finder") { recordingsStore.revealInFinder(recording) }
-                            Divider()
-                            Button("Delete", role: .destructive) { recordingsStore.deleteRecording(recording) }
-                        }
-                }
-            }
-            .listStyle(.inset(alternatesRowBackgrounds: true))
-        }
-    }
-}
-
 // MARK: - Recording Row
 
 struct RecordingRow: View {
@@ -486,7 +574,6 @@ struct RecordingRow: View {
 
     var body: some View {
         HStack(spacing: 14) {
-            // Video thumbnail
             ZStack {
                 RoundedRectangle(cornerRadius: 6)
                     .fill(.black)
@@ -503,7 +590,6 @@ struct RecordingRow: View {
                         .foregroundStyle(.white.opacity(0.3))
                 }
 
-                // Duration badge
                 if recording.duration > 0 {
                     VStack {
                         Spacer()
@@ -534,6 +620,10 @@ struct RecordingRow: View {
                     Text(recording.date, style: .time)
                     Text("·")
                     Text(recording.fileSize)
+                    if recording.hasTranscription {
+                        Text("·")
+                        Label("Transcribed", systemImage: "text.alignleft")
+                    }
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -551,7 +641,7 @@ struct RecordingRow: View {
                 .buttonStyle(.plain)
                 .foregroundStyle(.blue)
 
-                ShareLink(item: recording.url) {
+                ShareLink(item: recording.videoURL) {
                     Image(systemName: "square.and.arrow.up")
                         .font(.body)
                 }
@@ -570,9 +660,6 @@ struct RecordingRow: View {
         }
         .padding(.vertical, 6)
         .contentShape(Rectangle())
-        .onTapGesture(count: 2) {
-            recordingsStore.openRecording(recording)
-        }
         .alert("Delete Recording?", isPresented: $showDeleteConfirmation) {
             Button("Cancel", role: .cancel) { }
             Button("Delete", role: .destructive) {

@@ -136,14 +136,17 @@ final class RecordingManager: NSObject, ObservableObject {
             config.channelCount = 2
             config.excludesCurrentProcessAudio = true
 
-            // Set up output file
+            // Set up output file in its own folder
             let recordingsDir = RecordingsStore.recordingsDirectory
             try FileManager.default.createDirectory(at: recordingsDir, withIntermediateDirectories: true)
 
             let formatter = DateFormatter()
             formatter.dateFormat = "yyyy-MM-dd-HH-mm-ss"
-            let filename = "Recording-\(formatter.string(from: Date())).mov"
-            let url = recordingsDir.appendingPathComponent(filename)
+            let folderName = "Recording-\(formatter.string(from: Date()))"
+            let folderURL = recordingsDir.appendingPathComponent(folderName)
+            try FileManager.default.createDirectory(at: folderURL, withIntermediateDirectories: true)
+
+            let url = folderURL.appendingPathComponent("recording.mov")
             outputURL = url
 
             try writer.setUp(url: url, videoWidth: config.width, videoHeight: config.height)
