@@ -1,21 +1,21 @@
 import Foundation
 import AVFoundation
-import WhisperKit
+import FluidAudio
 
 enum TranscriptionState: Equatable {
     case idle
     case extractingAudio
-    case downloadingModel
-    case loadingModel
+    case downloadingModels
     case transcribing(progress: Double)
+    case diarizing
     case done
     case error(String)
 
     static func == (lhs: TranscriptionState, rhs: TranscriptionState) -> Bool {
         switch (lhs, rhs) {
         case (.idle, .idle), (.extractingAudio, .extractingAudio),
-             (.downloadingModel, .downloadingModel),
-             (.loadingModel, .loadingModel), (.done, .done):
+             (.downloadingModels, .downloadingModels),
+             (.diarizing, .diarizing), (.done, .done):
             return true
         case (.transcribing(let a), .transcribing(let b)):
             return a == b
@@ -35,49 +35,34 @@ enum TranscriptionState: Equatable {
 @MainActor
 final class TranscriptionManager: ObservableObject {
     @Published var states: [String: TranscriptionState] = [:]
-    @Published var modelLoaded = false
+    @Published var modelsReady = false
 
-    private var whisperKit: WhisperKit?
+    private var asrManager: AsrManager?
+    private var asrModels: AsrModels?
+    private var diarizerManager: OfflineDiarizerManager?
 
-    static let modelName = "openai_whisper-large-v3_turbo"
+    func ensureModelsLoaded(stateId: String) async throws {
+        if asrManager != nil && diarizerManager != nil { return }
 
-    static var modelsDirectory: URL {
-        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        return appSupport.appendingPathComponent("MacRecord/Models")
-    }
+        states[stateId] = .downloadingModels
 
-    func ensureModelLoaded(stateId: String) async throws {
-        guard whisperKit == nil else { return }
-
-        let modelsDir = Self.modelsDirectory
-        let localModelFolder = modelsDir.appendingPathComponent(Self.modelName)
-
-        if FileManager.default.fileExists(atPath: localModelFolder.path) {
-            // Load from local folder
-            states[stateId] = .loadingModel
-            let config = WhisperKitConfig(
-                modelFolder: localModelFolder.path,
-                verbose: true,
-                prewarm: true,
-                load: true
-            )
-            whisperKit = try await WhisperKit(config)
-        } else {
-            // Download to our models directory
-            states[stateId] = .downloadingModel
-            try FileManager.default.createDirectory(at: modelsDir, withIntermediateDirectories: true)
-            let config = WhisperKitConfig(
-                model: Self.modelName,
-                downloadBase: modelsDir,
-                verbose: true,
-                prewarm: true,
-                load: true
-            )
-            whisperKit = try await WhisperKit(config)
+        // Load ASR models
+        if asrModels == nil {
+            asrModels = try await AsrModels.downloadAndLoad(version: .v3)
+        }
+        if asrManager == nil {
+            asrManager = AsrManager(config: .default)
+            try await asrManager!.initialize(models: asrModels!)
         }
 
-        states[stateId] = .loadingModel
-        modelLoaded = true
+        // Load diarization models
+        if diarizerManager == nil {
+            let config = OfflineDiarizerConfig()
+            diarizerManager = OfflineDiarizerManager(config: config)
+            try await diarizerManager!.prepareModels()
+        }
+
+        modelsReady = true
     }
 
     func transcribe(recording: Recording) async {
@@ -85,7 +70,7 @@ final class TranscriptionManager: ObservableObject {
         guard states[id] == nil || states[id] == .idle || states[id] == .done || states[id]?.isError == true else { return }
 
         do {
-            // Step 1: Extract audio
+            // Step 1: Extract audio to WAV (FluidAudio handles conversion internally from URL)
             states[id] = .extractingAudio
             let audioURL = recording.folderURL.appendingPathComponent("audio.m4a")
 
@@ -93,35 +78,29 @@ final class TranscriptionManager: ObservableObject {
                 try await extractAudio(from: recording.videoURL, to: audioURL)
             }
 
-            // Step 2: Download & load model
-            try await ensureModelLoaded(stateId: id)
+            // Step 2: Load models
+            try await ensureModelsLoaded(stateId: id)
 
-            guard let pipe = whisperKit else {
+            guard let asr = asrManager, let diarizer = diarizerManager else {
                 throw TranscriptionError.modelNotLoaded
             }
 
             // Step 3: Transcribe
-            states[id] = .transcribing(progress: 0)
+            states[id] = .transcribing(progress: 0.3)
+            let asrResult = try await asr.transcribe(audioURL)
+            states[id] = .transcribing(progress: 0.6)
 
-            let options = DecodingOptions(
-                temperature: 0.0,
-                temperatureFallbackCount: 3,
-                sampleLength: 224,
-                wordTimestamps: true
+            // Step 4: Diarize
+            states[id] = .diarizing
+            let diarizationResult = try await diarizer.process(audioURL)
+
+            // Step 5: Merge and save as markdown
+            states[id] = .transcribing(progress: 0.9)
+            let markdown = Self.buildMarkdown(
+                asr: asrResult,
+                diarization: diarizationResult,
+                filename: recording.filename
             )
-
-            let results: [TranscriptionResult] = try await pipe.transcribe(
-                audioPath: audioURL.path,
-                decodeOptions: options
-            ) { progress in
-                Task { @MainActor in
-                    self.states[id] = .transcribing(progress: min(Double(progress.windowId + 1) * 0.1, 0.99))
-                }
-                return true
-            }
-
-            // Step 4: Save as markdown
-            let markdown = Self.buildMarkdown(from: results, filename: recording.filename)
             let mdURL = recording.folderURL.appendingPathComponent("transcription.md")
             try markdown.write(toFile: mdURL.path, atomically: true, encoding: .utf8)
 
@@ -158,28 +137,94 @@ final class TranscriptionManager: ObservableObject {
         }
     }
 
-    // MARK: - Markdown Generation
+    // MARK: - Markdown Generation with Speaker Labels
 
-    static func buildMarkdown(from results: [TranscriptionResult], filename: String) -> String {
+    static func buildMarkdown(
+        asr: ASRResult,
+        diarization: DiarizationResult,
+        filename: String
+    ) -> String {
         var md = "# Transcription: \(filename)\n\n"
+
+        let speakerCount = Set(diarization.segments.map { $0.speakerId }).count
+        md += "_\(speakerCount) speaker\(speakerCount == 1 ? "" : "s") detected_\n\n"
         md += "---\n\n"
 
-        for result in results {
-            for segment in result.segments {
-                let start = formatTimestamp(segment.start)
-                let end = formatTimestamp(segment.end)
-                let text = segment.text.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !text.isEmpty {
-                    md += "**[\(start) → \(end)]**\n\n"
-                    md += "\(text)\n\n"
-                }
+        // If we have word-level timings, align them with speaker segments
+        if let tokenTimings = asr.tokenTimings, !tokenTimings.isEmpty {
+            md += Self.buildAlignedTranscript(tokens: tokenTimings, speakers: diarization.segments)
+        } else {
+            // Fallback: just output the full text with speaker segments
+            for segment in diarization.segments {
+                let start = formatTimestamp(Double(segment.startTimeSeconds))
+                let end = formatTimestamp(Double(segment.endTimeSeconds))
+                let speaker = Self.speakerName(segment.speakerId)
+                md += "**[\(start) → \(end)] \(speaker)**\n\n"
             }
+            md += "\n" + asr.text + "\n"
         }
 
         return md
     }
 
-    static func formatTimestamp(_ seconds: Float) -> String {
+    /// Align word-level ASR tokens with speaker diarization segments
+    static func buildAlignedTranscript(
+        tokens: [TokenTiming],
+        speakers: [TimedSpeakerSegment]
+    ) -> String {
+        var md = ""
+        var currentSpeaker: String?
+        var currentText = ""
+        var segmentStart: Double?
+
+        for token in tokens {
+            let midpoint = (token.startTime + token.endTime) / 2.0
+            let speaker = Self.findSpeaker(at: Float(midpoint), in: speakers)
+
+            if speaker != currentSpeaker {
+                // Flush previous speaker's text
+                if let prev = currentSpeaker, !currentText.isEmpty {
+                    let start = formatTimestamp(segmentStart ?? 0)
+                    let name = speakerName(prev)
+                    md += "**[\(start)] \(name):**\n\(currentText.trimmingCharacters(in: .whitespacesAndNewlines))\n\n"
+                }
+                currentSpeaker = speaker
+                currentText = ""
+                segmentStart = token.startTime
+            }
+            currentText += token.token
+        }
+
+        // Flush last segment
+        if let prev = currentSpeaker, !currentText.isEmpty {
+            let start = formatTimestamp(segmentStart ?? 0)
+            let name = speakerName(prev)
+            md += "**[\(start)] \(name):**\n\(currentText.trimmingCharacters(in: .whitespacesAndNewlines))\n\n"
+        }
+
+        return md
+    }
+
+    static func findSpeaker(at time: Float, in segments: [TimedSpeakerSegment]) -> String? {
+        for segment in segments {
+            if time >= segment.startTimeSeconds && time <= segment.endTimeSeconds {
+                return segment.speakerId
+            }
+        }
+        return nil
+    }
+
+    static func speakerName(_ id: String) -> String {
+        // Convert IDs like "speaker_0" to friendly names
+        if let num = id.split(separator: "_").last.flatMap({ Int($0) }) {
+            let names = ["Speaker A", "Speaker B", "Speaker C", "Speaker D",
+                         "Speaker E", "Speaker F", "Speaker G", "Speaker H"]
+            return num < names.count ? names[num] : "Speaker \(num + 1)"
+        }
+        return id
+    }
+
+    static func formatTimestamp(_ seconds: Double) -> String {
         let total = Int(seconds)
         let h = total / 3600
         let m = (total % 3600) / 60
@@ -197,7 +242,7 @@ enum TranscriptionError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .modelNotLoaded: return "Whisper model failed to load."
+        case .modelNotLoaded: return "AI models failed to load."
         case .audioExtractionFailed: return "Could not extract audio from video."
         }
     }

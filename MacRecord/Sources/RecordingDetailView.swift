@@ -109,7 +109,7 @@ struct RecordingDetailView: View {
             .buttonStyle(.borderedProminent)
             .controlSize(.small)
 
-        case .extractingAudio, .downloadingModel, .loadingModel, .transcribing:
+        case .extractingAudio, .downloadingModels, .transcribing, .diarizing:
             ProgressView()
                 .controlSize(.small)
 
@@ -156,12 +156,12 @@ struct RecordingDetailView: View {
             switch state {
             case .extractingAudio:
                 progressView("Extracting audio...", progress: nil)
-            case .downloadingModel:
-                progressView("Downloading Whisper model (first time only)...", progress: nil)
-            case .loadingModel:
-                progressView("Loading Whisper model...", progress: nil)
+            case .downloadingModels:
+                progressView("Downloading AI models (first time only)...", progress: nil)
             case .transcribing(let progress):
                 progressView("Transcribing...", progress: progress)
+            case .diarizing:
+                progressView("Identifying speakers...", progress: nil)
             case .error(let msg):
                 VStack(spacing: 8) {
                     Image(systemName: "exclamationmark.triangle")
