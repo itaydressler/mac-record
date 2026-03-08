@@ -40,13 +40,13 @@ final class TranscriptionManager: ObservableObject {
     private var asrManager: AsrManager?
     private var asrModels: AsrModels?
     private var diarizerManager: OfflineDiarizerManager?
+    var speakerProfileStore: SpeakerProfileStore?
 
     func ensureModelsLoaded(stateId: String) async throws {
         if asrManager != nil && diarizerManager != nil { return }
 
         states[stateId] = .downloadingModels
 
-        // Load ASR models
         if asrModels == nil {
             asrModels = try await AsrModels.downloadAndLoad(version: .v3)
         }
@@ -55,7 +55,6 @@ final class TranscriptionManager: ObservableObject {
             try await asrManager!.initialize(models: asrModels!)
         }
 
-        // Load diarization models
         if diarizerManager == nil {
             let config = OfflineDiarizerConfig()
             diarizerManager = OfflineDiarizerManager(config: config)
@@ -70,7 +69,7 @@ final class TranscriptionManager: ObservableObject {
         guard states[id] == nil || states[id] == .idle || states[id] == .done || states[id]?.isError == true else { return }
 
         do {
-            // Step 1: Extract audio to WAV (FluidAudio handles conversion internally from URL)
+            // Step 1: Extract audio
             states[id] = .extractingAudio
             let audioURL = recording.folderURL.appendingPathComponent("audio.m4a")
 
@@ -94,15 +93,25 @@ final class TranscriptionManager: ObservableObject {
             states[id] = .diarizing
             let diarizationResult = try await diarizer.process(audioURL)
 
-            // Step 5: Merge and save as markdown
+            // Step 5: Build structured transcript
             states[id] = .transcribing(progress: 0.9)
-            let markdown = Self.buildMarkdown(
+
+            // Match speakers against known profiles
+            let speakerMatches = matchSpeakers(diarization: diarizationResult)
+
+            let transcript = Self.buildTranscript(
                 asr: asrResult,
                 diarization: diarizationResult,
-                filename: recording.filename
+                speakerMatches: speakerMatches,
+                recordingId: id
             )
-            let mdURL = recording.folderURL.appendingPathComponent("transcription.md")
-            try markdown.write(toFile: mdURL.path, atomically: true, encoding: .utf8)
+
+            // Save as JSON
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            let data = try encoder.encode(transcript)
+            try data.write(to: recording.transcriptURL, options: .atomic)
 
             // Clean up temp audio
             try? FileManager.default.removeItem(at: audioURL)
@@ -111,6 +120,58 @@ final class TranscriptionManager: ObservableObject {
         } catch {
             states[id] = .error(error.localizedDescription)
         }
+    }
+
+    // MARK: - Speaker Matching
+
+    private func matchSpeakers(diarization: DiarizationResult) -> [String: SpeakerMatch] {
+        var matches: [String: SpeakerMatch] = [:]
+        guard let profiles = speakerProfileStore?.profiles, !profiles.isEmpty else {
+            return matches
+        }
+
+        // Get unique speaker IDs and their embeddings from diarization
+        let speakerEmbeddings = diarization.speakerDatabase ?? [:]
+
+        for (speakerId, embedding) in speakerEmbeddings {
+            var bestMatch: SpeakerProfile?
+            var bestDistance: Float = Float.greatestFiniteMagnitude
+
+            for profile in profiles {
+                guard !profile.embedding.isEmpty else { continue }
+                let distance = cosineDistance(embedding, profile.embedding)
+                if distance < bestDistance {
+                    bestDistance = distance
+                    bestMatch = profile
+                }
+            }
+
+            // Threshold for matching (lower = stricter)
+            if bestDistance < 0.5, let match = bestMatch {
+                matches[speakerId] = SpeakerMatch(
+                    profileId: match.id.uuidString,
+                    name: match.name,
+                    photoFileName: match.photoFileName
+                )
+            }
+        }
+
+        return matches
+    }
+
+    private func cosineDistance(_ a: [Float], _ b: [Float]) -> Float {
+        guard a.count == b.count, !a.isEmpty else { return 1.0 }
+        var dot: Float = 0
+        var normA: Float = 0
+        var normB: Float = 0
+        for i in 0..<a.count {
+            dot += a[i] * b[i]
+            normA += a[i] * a[i]
+            normB += b[i] * b[i]
+        }
+        let denom = sqrt(normA) * sqrt(normB)
+        guard denom > 0 else { return 1.0 }
+        return 1.0 - (dot / denom)
     }
 
     // MARK: - Audio Extraction
@@ -137,72 +198,129 @@ final class TranscriptionManager: ObservableObject {
         }
     }
 
-    // MARK: - Markdown Generation with Speaker Labels
+    // MARK: - Build Structured Transcript
 
-    static func buildMarkdown(
+    static func buildTranscript(
         asr: ASRResult,
         diarization: DiarizationResult,
-        filename: String
-    ) -> String {
-        var md = "# Transcription: \(filename)\n\n"
-
-        let speakerCount = Set(diarization.segments.map { $0.speakerId }).count
-        md += "_\(speakerCount) speaker\(speakerCount == 1 ? "" : "s") detected_\n\n"
-        md += "---\n\n"
-
-        // If we have word-level timings, align them with speaker segments
-        if let tokenTimings = asr.tokenTimings, !tokenTimings.isEmpty {
-            md += Self.buildAlignedTranscript(tokens: tokenTimings, speakers: diarization.segments)
-        } else {
-            // Fallback: just output the full text with speaker segments
-            for segment in diarization.segments {
-                let start = formatTimestamp(Double(segment.startTimeSeconds))
-                let end = formatTimestamp(Double(segment.endTimeSeconds))
-                let speaker = Self.speakerName(segment.speakerId)
-                md += "**[\(start) → \(end)] \(speaker)**\n\n"
+        speakerMatches: [String: SpeakerMatch],
+        recordingId: String
+    ) -> Transcript {
+        // Build speaker list
+        let uniqueSpeakerIds = Array(Set(diarization.segments.map { $0.speakerId })).sorted()
+        var speakers: [TranscriptSpeaker] = []
+        for (index, speakerId) in uniqueSpeakerIds.enumerated() {
+            if let match = speakerMatches[speakerId] {
+                speakers.append(TranscriptSpeaker(
+                    id: speakerId,
+                    name: match.name,
+                    profileId: match.profileId,
+                    color: index % TranscriptSpeaker.colors.count
+                ))
+            } else {
+                let name = Self.defaultSpeakerName(index: index)
+                speakers.append(TranscriptSpeaker(
+                    id: speakerId,
+                    name: name,
+                    color: index % TranscriptSpeaker.colors.count
+                ))
             }
-            md += "\n" + asr.text + "\n"
         }
 
-        return md
+        // Build segments by aligning tokens with speaker segments
+        var segments: [TranscriptSegment] = []
+
+        if let tokenTimings = asr.tokenTimings, !tokenTimings.isEmpty {
+            segments = alignTokensWithSpeakers(
+                tokens: tokenTimings,
+                speakers: diarization.segments
+            )
+        } else {
+            // Fallback: one segment per diarization segment with full text
+            for segment in diarization.segments {
+                segments.append(TranscriptSegment(
+                    speakerId: segment.speakerId,
+                    startTime: Double(segment.startTimeSeconds),
+                    endTime: Double(segment.endTimeSeconds),
+                    text: ""
+                ))
+            }
+            // Put full text in first segment if no alignment possible
+            if !segments.isEmpty {
+                segments[0] = TranscriptSegment(
+                    speakerId: segments[0].speakerId,
+                    startTime: segments[0].startTime,
+                    endTime: segments[0].endTime,
+                    text: asr.text
+                )
+            }
+        }
+
+        // Apply ITN (Inverse Text Normalization) to each segment
+        for i in 0..<segments.count {
+            let normalized = TextNormalizer.shared.normalizeSentence(segments[i].text)
+            segments[i] = TranscriptSegment(
+                speakerId: segments[i].speakerId,
+                startTime: segments[i].startTime,
+                endTime: segments[i].endTime,
+                text: normalized,
+                confidence: segments[i].confidence
+            )
+        }
+
+        return Transcript(
+            version: Transcript.currentVersion,
+            recordingId: recordingId,
+            createdAt: Date(),
+            speakers: speakers,
+            segments: segments
+        )
     }
 
-    /// Align word-level ASR tokens with speaker diarization segments
-    static func buildAlignedTranscript(
+    static func alignTokensWithSpeakers(
         tokens: [TokenTiming],
         speakers: [TimedSpeakerSegment]
-    ) -> String {
-        var md = ""
+    ) -> [TranscriptSegment] {
+        var segments: [TranscriptSegment] = []
         var currentSpeaker: String?
         var currentText = ""
-        var segmentStart: Double?
+        var segmentStart: TimeInterval = 0
+        var segmentEnd: TimeInterval = 0
 
         for token in tokens {
             let midpoint = (token.startTime + token.endTime) / 2.0
-            let speaker = Self.findSpeaker(at: Float(midpoint), in: speakers)
+            let speaker = findSpeaker(at: Float(midpoint), in: speakers)
 
             if speaker != currentSpeaker {
-                // Flush previous speaker's text
-                if let prev = currentSpeaker, !currentText.isEmpty {
-                    let start = formatTimestamp(segmentStart ?? 0)
-                    let name = speakerName(prev)
-                    md += "**[\(start)] \(name):**\n\(currentText.trimmingCharacters(in: .whitespacesAndNewlines))\n\n"
+                // Flush previous segment
+                if let prev = currentSpeaker, !currentText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    segments.append(TranscriptSegment(
+                        speakerId: prev,
+                        startTime: segmentStart,
+                        endTime: segmentEnd,
+                        text: currentText.trimmingCharacters(in: .whitespacesAndNewlines),
+                        confidence: token.confidence
+                    ))
                 }
                 currentSpeaker = speaker
                 currentText = ""
                 segmentStart = token.startTime
             }
             currentText += token.token
+            segmentEnd = token.endTime
         }
 
         // Flush last segment
-        if let prev = currentSpeaker, !currentText.isEmpty {
-            let start = formatTimestamp(segmentStart ?? 0)
-            let name = speakerName(prev)
-            md += "**[\(start)] \(name):**\n\(currentText.trimmingCharacters(in: .whitespacesAndNewlines))\n\n"
+        if let prev = currentSpeaker, !currentText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            segments.append(TranscriptSegment(
+                speakerId: prev,
+                startTime: segmentStart,
+                endTime: segmentEnd,
+                text: currentText.trimmingCharacters(in: .whitespacesAndNewlines)
+            ))
         }
 
-        return md
+        return segments
     }
 
     static func findSpeaker(at time: Float, in segments: [TimedSpeakerSegment]) -> String? {
@@ -214,26 +332,17 @@ final class TranscriptionManager: ObservableObject {
         return nil
     }
 
-    static func speakerName(_ id: String) -> String {
-        // Convert IDs like "speaker_0" to friendly names
-        if let num = id.split(separator: "_").last.flatMap({ Int($0) }) {
-            let names = ["Speaker A", "Speaker B", "Speaker C", "Speaker D",
-                         "Speaker E", "Speaker F", "Speaker G", "Speaker H"]
-            return num < names.count ? names[num] : "Speaker \(num + 1)"
-        }
-        return id
+    static func defaultSpeakerName(index: Int) -> String {
+        let names = ["Speaker A", "Speaker B", "Speaker C", "Speaker D",
+                     "Speaker E", "Speaker F", "Speaker G", "Speaker H"]
+        return index < names.count ? names[index] : "Speaker \(index + 1)"
     }
+}
 
-    static func formatTimestamp(_ seconds: Double) -> String {
-        let total = Int(seconds)
-        let h = total / 3600
-        let m = (total % 3600) / 60
-        let s = total % 60
-        if h > 0 {
-            return String(format: "%d:%02d:%02d", h, m, s)
-        }
-        return String(format: "%02d:%02d", m, s)
-    }
+struct SpeakerMatch {
+    let profileId: String
+    let name: String
+    let photoFileName: String?
 }
 
 enum TranscriptionError: LocalizedError {

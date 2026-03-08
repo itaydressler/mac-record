@@ -5,6 +5,7 @@ struct MacRecordApp: App {
     @StateObject private var recordingManager = RecordingManager()
     @StateObject private var recordingsStore = RecordingsStore()
     @StateObject private var transcriptionManager = TranscriptionManager()
+    @StateObject private var speakerProfileStore = SpeakerProfileStore()
 
     var body: some Scene {
         WindowGroup {
@@ -12,7 +13,11 @@ struct MacRecordApp: App {
                 .environmentObject(recordingManager)
                 .environmentObject(recordingsStore)
                 .environmentObject(transcriptionManager)
+                .environmentObject(speakerProfileStore)
                 .frame(minWidth: 700, minHeight: 500)
+                .onAppear {
+                    transcriptionManager.speakerProfileStore = speakerProfileStore
+                }
                 .onReceive(recordingManager.$state) { newState in
                     if newState == .recording {
                         recordingManager.floatingToolbar.show(

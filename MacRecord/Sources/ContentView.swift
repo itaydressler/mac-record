@@ -5,8 +5,10 @@ struct ContentView: View {
     @EnvironmentObject var recordingManager: RecordingManager
     @EnvironmentObject var recordingsStore: RecordingsStore
     @EnvironmentObject var transcriptionManager: TranscriptionManager
+    @EnvironmentObject var speakerProfileStore: SpeakerProfileStore
     @State private var selectedRecording: Recording?
     @State private var showSourcePicker = false
+    @State private var showSpeakerProfiles = false
 
     var body: some View {
         Group {
@@ -35,6 +37,25 @@ struct ContentView: View {
         .environmentObject(recordingManager)
         .environmentObject(recordingsStore)
         .environmentObject(transcriptionManager)
+        .environmentObject(speakerProfileStore)
+        .sheet(isPresented: $showSpeakerProfiles) {
+            SpeakerProfilesView()
+                .environmentObject(speakerProfileStore)
+                .frame(width: 500, height: 450)
+        }
+        .onReceive(recordingManager.$state) { newState in
+            if newState == .idle {
+                // Auto-transcribe the latest recording after stopping
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                    recordingsStore.refresh()
+                    if let latest = recordingsStore.recordings.first, !latest.hasTranscription {
+                        Task {
+                            await transcriptionManager.transcribe(recording: latest)
+                        }
+                    }
+                }
+            }
+        }
     }
 
     // MARK: - Main View (Recordings + Record Button)
@@ -52,6 +73,14 @@ struct ContentView: View {
                     if recordingManager.state == .recording {
                         recordingIndicator
                     }
+
+                    Button {
+                        showSpeakerProfiles = true
+                    } label: {
+                        Image(systemName: "person.2")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
 
                     Button {
                         recordingsStore.openRecordingsFolder()
@@ -570,6 +599,7 @@ struct WindowThumbnailCard: View {
 struct RecordingRow: View {
     let recording: Recording
     @EnvironmentObject var recordingsStore: RecordingsStore
+    @EnvironmentObject var transcriptionManager: TranscriptionManager
     @State private var showDeleteConfirmation = false
 
     var body: some View {
@@ -620,7 +650,30 @@ struct RecordingRow: View {
                     Text(recording.date, style: .time)
                     Text("·")
                     Text(recording.fileSize)
-                    if recording.hasTranscription {
+                    if let state = transcriptionManager.states[recording.id] {
+                        Text("·")
+                        switch state {
+                        case .extractingAudio, .downloadingModels:
+                            ProgressView()
+                                .controlSize(.mini)
+                            Text("Preparing...")
+                        case .transcribing:
+                            ProgressView()
+                                .controlSize(.mini)
+                            Text("Transcribing...")
+                        case .diarizing:
+                            ProgressView()
+                                .controlSize(.mini)
+                            Text("Identifying speakers...")
+                        case .error:
+                            Label("Failed", systemImage: "exclamationmark.triangle")
+                                .foregroundStyle(.red)
+                        default:
+                            if recording.hasTranscription {
+                                Label("Transcribed", systemImage: "text.alignleft")
+                            }
+                        }
+                    } else if recording.hasTranscription {
                         Text("·")
                         Label("Transcribed", systemImage: "text.alignleft")
                     }

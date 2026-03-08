@@ -16,7 +16,11 @@ struct Recording: Identifiable, Hashable {
     static func == (lhs: Recording, rhs: Recording) -> Bool { lhs.id == rhs.id }
     func hash(into hasher: inout Hasher) { hasher.combine(id) }
 
-    var transcriptionURL: URL {
+    var transcriptURL: URL {
+        folderURL.appendingPathComponent("transcript.json")
+    }
+
+    var legacyTranscriptionURL: URL {
         folderURL.appendingPathComponent("transcription.md")
     }
 
@@ -39,9 +43,11 @@ struct Recording: Identifiable, Hashable {
         formatter.countStyle = .file
         self.fileSize = formatter.string(fromByteCount: bytes)
 
-        // Check for transcription
+        // Check for transcription (JSON or legacy markdown)
+        let jsonPath = folderURL.appendingPathComponent("transcript.json")
         let mdPath = folderURL.appendingPathComponent("transcription.md")
-        self.hasTranscription = FileManager.default.fileExists(atPath: mdPath.path)
+        self.hasTranscription = FileManager.default.fileExists(atPath: jsonPath.path)
+            || FileManager.default.fileExists(atPath: mdPath.path)
 
         // Load duration
         if FileManager.default.fileExists(atPath: videoURL.path) {
@@ -186,8 +192,20 @@ final class RecordingsStore: ObservableObject {
         NSWorkspace.shared.open(dir)
     }
 
+    func loadTranscript(for recording: Recording) -> Transcript? {
+        let url = recording.transcriptURL
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return try? decoder.decode(Transcript.self, from: data)
+    }
+
     func loadTranscription(for recording: Recording) -> String? {
-        try? String(contentsOf: recording.transcriptionURL, encoding: .utf8)
+        // Try JSON first, fall back to legacy markdown
+        if let transcript = loadTranscript(for: recording) {
+            return transcript.renderMarkdown()
+        }
+        return try? String(contentsOf: recording.legacyTranscriptionURL, encoding: .utf8)
     }
 
     private func startMonitoring() {
