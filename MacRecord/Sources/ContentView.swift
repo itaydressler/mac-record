@@ -465,6 +465,7 @@ struct RecordingsListView: View {
                     RecordingRow(recording: recording)
                         .contextMenu {
                             Button("Open") { recordingsStore.openRecording(recording) }
+                            ShareLink(item: recording.url)
                             Button("Reveal in Finder") { recordingsStore.revealInFinder(recording) }
                             Divider()
                             Button("Delete", role: .destructive) { recordingsStore.deleteRecording(recording) }
@@ -549,6 +550,13 @@ struct RecordingRow: View {
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(.blue)
+
+                ShareLink(item: recording.url) {
+                    Image(systemName: "square.and.arrow.up")
+                        .font(.body)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
 
                 Button {
                     showDeleteConfirmation = true
