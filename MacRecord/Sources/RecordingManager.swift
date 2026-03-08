@@ -22,6 +22,7 @@ final class RecordingManager: NSObject, ObservableObject {
     @Published var recordingMode: RecordingMode = .display
     @Published var elapsedTime: TimeInterval = 0
     @Published var errorMessage: String?
+    @Published var isPaused: Bool = false
     @Published var displayThumbnails: [CGDirectDisplayID: NSImage] = [:]
     @Published var windowThumbnails: [CGWindowID: NSImage] = [:]
 
@@ -31,11 +32,14 @@ final class RecordingManager: NSObject, ObservableObject {
     }
 
     private var stream: SCStream?
-    private var sessionStartDate: Date?
     private var timer: Timer?
     private var outputURL: URL?
+    private var recordingStartDate: Date?
+    private var totalPausedDuration: TimeInterval = 0
+    private var lastPauseDate: Date?
     private let streamOutput = StreamOutput()
     private let writer = SampleWriter()
+    let floatingToolbar = FloatingToolbarController()
 
     override init() {
         super.init()
@@ -76,9 +80,7 @@ final class RecordingManager: NSObject, ObservableObject {
                 let image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
                 let nsImage = NSImage(cgImage: image, size: NSSize(width: image.width, height: image.height))
                 displayThumbnails[display.displayID] = nsImage
-            } catch {
-                // Skip failed thumbnails
-            }
+            } catch {}
         }
 
         for window in availableWindows {
@@ -92,9 +94,7 @@ final class RecordingManager: NSObject, ObservableObject {
                 let image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
                 let nsImage = NSImage(cgImage: image, size: NSSize(width: image.width, height: image.height))
                 windowThumbnails[window.windowID] = nsImage
-            } catch {
-                // Skip failed thumbnails
-            }
+            } catch {}
         }
     }
 
@@ -146,10 +146,8 @@ final class RecordingManager: NSObject, ObservableObject {
             let url = recordingsDir.appendingPathComponent(filename)
             outputURL = url
 
-            // Configure the writer (thread-safe, writes on capture queue)
             try writer.setUp(url: url, videoWidth: config.width, videoHeight: config.height)
 
-            // Start the stream — separate queues for video and audio to prevent starvation
             let videoQueue = DispatchQueue(label: "com.tinyworks.MacRecord.video", qos: .userInitiated)
             let audioQueue = DispatchQueue(label: "com.tinyworks.MacRecord.audio", qos: .userInitiated)
             let stream = SCStream(filter: filter, configuration: config, delegate: streamOutput)
@@ -160,7 +158,10 @@ final class RecordingManager: NSObject, ObservableObject {
             self.stream = stream
 
             state = .recording
-            sessionStartDate = Date()
+            isPaused = false
+            totalPausedDuration = 0
+            lastPauseDate = nil
+            recordingStartDate = Date()
             startTimer()
         } catch {
             state = .idle
@@ -172,30 +173,59 @@ final class RecordingManager: NSObject, ObservableObject {
         guard state == .recording else { return }
         state = .stopping
 
+        // If paused, account for remaining pause time
+        if isPaused, let pauseDate = lastPauseDate {
+            totalPausedDuration += Date().timeIntervalSince(pauseDate)
+        }
+        isPaused = false
+
+        stopTimer()
+
         do {
             try await stream?.stopCapture()
-            stream = nil
+        } catch {}
+        stream = nil
 
-            await writer.finish()
+        await writer.finish()
 
-            stopTimer()
-            state = .idle
-            elapsedTime = 0
-        } catch {
-            errorMessage = "Failed to stop recording: \(error.localizedDescription)"
-            state = .idle
+        state = .idle
+        elapsedTime = 0
+    }
+
+    func pauseRecording() async {
+        guard state == .recording, !isPaused else { return }
+        writer.setPaused(true)
+        isPaused = true
+        lastPauseDate = Date()
+        stopTimer()
+    }
+
+    func resumeRecording() async {
+        guard state == .recording, isPaused else { return }
+        if let pauseDate = lastPauseDate {
+            totalPausedDuration += Date().timeIntervalSince(pauseDate)
         }
+        lastPauseDate = nil
+        writer.setPaused(false)
+        isPaused = false
+        startTimer()
     }
 
     // MARK: - Timer
 
     private func startTimer() {
-        timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+        updateElapsedTime()
+        timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
-                guard let self = self, let start = self.sessionStartDate else { return }
-                self.elapsedTime = Date().timeIntervalSince(start)
+                self?.updateElapsedTime()
             }
         }
+    }
+
+    private func updateElapsedTime() {
+        guard let start = recordingStartDate else { return }
+        let total = Date().timeIntervalSince(start)
+        elapsedTime = total - totalPausedDuration
     }
 
     private func stopTimer() {
@@ -213,7 +243,24 @@ final class SampleWriter: @unchecked Sendable {
     private var audioInput: AVAssetWriterInput?
     private var sessionStarted = false
     private var firstVideoTimestamp: CMTime?
-    private var firstAudioTimestamp: CMTime?
+
+    // Pause support: track total paused time and offset timestamps
+    private var paused = false
+    private var pauseStartTime: CMTime?
+    private var totalPausedTime: CMTime = .zero
+
+    func setPaused(_ value: Bool) {
+        lock.lock()
+        if value && !paused {
+            // Starting pause — we'll record the next sample's timestamp as pause start
+            paused = true
+            pauseStartTime = nil // will be set on next sample
+        } else if !value && paused {
+            // Resuming — pauseStartTime to now will be calculated on next sample
+            paused = false
+        }
+        lock.unlock()
+    }
 
     func setUp(url: URL, videoWidth: Int, videoHeight: Int) throws {
         lock.lock()
@@ -234,7 +281,6 @@ final class SampleWriter: @unchecked Sendable {
         vInput.expectsMediaDataInRealTime = true
         vInput.mediaTimeScale = CMTimeScale(NSEC_PER_SEC)
 
-        // Build a source format hint matching ScreenCaptureKit's 32-bit float interleaved LPCM
         var audioDesc = AudioStreamBasicDescription(
             mSampleRate: 48000,
             mFormatID: kAudioFormatLinearPCM,
@@ -275,12 +321,10 @@ final class SampleWriter: @unchecked Sendable {
         audioInput = aInput
         sessionStarted = false
         firstVideoTimestamp = nil
-        firstAudioTimestamp = nil
+        paused = false
+        pauseStartTime = nil
+        totalPausedTime = .zero
     }
-
-    private var videoFrameCount: Int = 0
-    private var audioFrameCount: Int = 0
-    private var audioDropCount: Int = 0
 
     func appendSampleBuffer(_ sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
         lock.lock()
@@ -302,11 +346,27 @@ final class SampleWriter: @unchecked Sendable {
         let timestamp = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
         guard timestamp.isValid, timestamp.flags.contains(.valid) else { return }
 
+        // Handle pause: record when pause started, accumulate when resumed
+        if paused {
+            if pauseStartTime == nil {
+                pauseStartTime = timestamp
+            }
+            return // Drop samples while paused
+        } else if let pauseStart = pauseStartTime {
+            // Just resumed: add the pause duration to total offset
+            let pauseDuration = CMTimeSubtract(timestamp, pauseStart)
+            totalPausedTime = CMTimeAdd(totalPausedTime, pauseDuration)
+            pauseStartTime = nil
+        }
+
+        // Offset the timestamp to remove paused gaps
+        let adjustedTime = CMTimeSubtract(timestamp, totalPausedTime)
+
         // Start the writer and session on the very first valid sample
         if !sessionStarted {
             guard assetWriter.status == .unknown else { return }
             assetWriter.startWriting()
-            assetWriter.startSession(atSourceTime: timestamp)
+            assetWriter.startSession(atSourceTime: adjustedTime)
             sessionStarted = true
         }
 
@@ -314,28 +374,41 @@ final class SampleWriter: @unchecked Sendable {
 
         switch type {
         case .screen:
-            if firstVideoTimestamp == nil { firstVideoTimestamp = timestamp }
-            videoFrameCount += 1
+            if firstVideoTimestamp == nil { firstVideoTimestamp = adjustedTime }
             if let videoInput = videoInput, videoInput.isReadyForMoreMediaData {
-                videoInput.append(sampleBuffer)
+                // Create a new sample buffer with adjusted timing
+                if let adjusted = Self.adjustedSampleBuffer(sampleBuffer, newTime: adjustedTime) {
+                    videoInput.append(adjusted)
+                }
             }
         case .audio, .microphone:
-            // Only start writing audio after we have at least one video frame
             guard firstVideoTimestamp != nil else { return }
-
-            audioFrameCount += 1
-            if firstAudioTimestamp == nil {
-                firstAudioTimestamp = timestamp
-                // First audio sample received
-            }
             if let audioInput = audioInput, audioInput.isReadyForMoreMediaData {
-                audioInput.append(sampleBuffer)
-            } else {
-                audioDropCount += 1
+                if let adjusted = Self.adjustedSampleBuffer(sampleBuffer, newTime: adjustedTime) {
+                    audioInput.append(adjusted)
+                }
             }
         @unknown default:
             break
         }
+    }
+
+    /// Create a copy of a CMSampleBuffer with an adjusted presentation timestamp
+    private static func adjustedSampleBuffer(_ sampleBuffer: CMSampleBuffer, newTime: CMTime) -> CMSampleBuffer? {
+        var timingInfo = CMSampleTimingInfo(
+            duration: CMSampleBufferGetDuration(sampleBuffer),
+            presentationTimeStamp: newTime,
+            decodeTimeStamp: .invalid
+        )
+        var newBuffer: CMSampleBuffer?
+        let status = CMSampleBufferCreateCopyWithNewTiming(
+            allocator: kCFAllocatorDefault,
+            sampleBuffer: sampleBuffer,
+            sampleTimingEntryCount: 1,
+            sampleTimingArray: &timingInfo,
+            sampleBufferOut: &newBuffer
+        )
+        return status == noErr ? newBuffer : nil
     }
 
     func finish() async {
@@ -344,18 +417,14 @@ final class SampleWriter: @unchecked Sendable {
         let vInput = videoInput
         let aInput = audioInput
         let started = sessionStarted
-        let vCount = videoFrameCount
-        let aCount = audioFrameCount
-        let aDrop = audioDropCount
         assetWriter = nil
         videoInput = nil
         audioInput = nil
         sessionStarted = false
         firstVideoTimestamp = nil
-        firstAudioTimestamp = nil
-        videoFrameCount = 0
-        audioFrameCount = 0
-        audioDropCount = 0
+        paused = false
+        pauseStartTime = nil
+        totalPausedTime = .zero
         lock.unlock()
 
         guard let writer = writer, started, writer.status == .writing else { return }
