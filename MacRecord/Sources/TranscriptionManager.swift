@@ -69,12 +69,31 @@ final class TranscriptionManager: ObservableObject {
         guard states[id] == nil || states[id] == .idle || states[id] == .done || states[id]?.isError == true else { return }
 
         do {
-            // Step 1: Extract audio
+            // Step 1: Extract audio tracks
             states[id] = .extractingAudio
-            let audioURL = recording.folderURL.appendingPathComponent("audio.m4a")
+            let systemAudioURL = recording.folderURL.appendingPathComponent("audio-system.m4a")
+            let micAudioURL = recording.folderURL.appendingPathComponent("audio-mic.m4a")
 
-            if !FileManager.default.fileExists(atPath: audioURL.path) {
-                try await extractAudio(from: recording.videoURL, to: audioURL)
+            // Check how many audio tracks exist
+            let asset = AVAsset(url: recording.videoURL)
+            let audioTracks = try await asset.loadTracks(withMediaType: .audio)
+            let hasMicTrack = audioTracks.count >= 2
+
+            for (i, track) in audioTracks.enumerated() {
+                let desc = try await track.load(.formatDescriptions)
+                let channels = desc.first.flatMap { CMAudioFormatDescriptionGetStreamBasicDescription($0)?.pointee.mChannelsPerFrame } ?? 0
+                DebugLog.shared.send("[Transcription] Audio track \(i): trackID=\(track.trackID), channels=\(channels)")
+            }
+            DebugLog.shared.send("[Transcription] Found \(audioTracks.count) audio track(s), hasMicTrack=\(hasMicTrack)")
+
+            // Extract system audio (track 0)
+            if !FileManager.default.fileExists(atPath: systemAudioURL.path) {
+                try await extractAudioTrack(from: recording.videoURL, trackIndex: 0, to: systemAudioURL)
+            }
+
+            // Extract mic audio (track 1) if available
+            if hasMicTrack && !FileManager.default.fileExists(atPath: micAudioURL.path) {
+                try await extractAudioTrack(from: recording.videoURL, trackIndex: 1, to: micAudioURL)
             }
 
             // Step 2: Load models
@@ -84,23 +103,39 @@ final class TranscriptionManager: ObservableObject {
                 throw TranscriptionError.modelNotLoaded
             }
 
-            // Step 3: Transcribe
-            states[id] = .transcribing(progress: 0.3)
-            let asrResult = try await asr.transcribe(audioURL)
-            states[id] = .transcribing(progress: 0.6)
+            // Step 3: Transcribe system audio (remote speakers)
+            states[id] = .transcribing(progress: 0.2)
+            let systemAsrResult = try await asr.transcribe(systemAudioURL)
+            states[id] = .transcribing(progress: 0.4)
 
-            // Step 4: Diarize
+            // Step 4: Diarize system audio
             states[id] = .diarizing
-            let diarizationResult = try await diarizer.process(audioURL)
+            let diarizationResult = try await diarizer.process(systemAudioURL)
 
-            // Step 5: Build structured transcript
+            // Step 5: Transcribe mic audio (local speaker) if available
+            var micAsrResult: ASRResult?
+            if hasMicTrack {
+                states[id] = .transcribing(progress: 0.7)
+                // Verify mic file was extracted and has content
+                let micAttrs = try? FileManager.default.attributesOfItem(atPath: micAudioURL.path)
+                let micSize = (micAttrs?[.size] as? Int) ?? 0
+                DebugLog.shared.send("[Transcription] Mic audio file size: \(micSize) bytes")
+
+                micAsrResult = try await asr.transcribe(micAudioURL)
+                let micText = micAsrResult?.text ?? ""
+                let micTokenCount = micAsrResult?.tokenTimings?.count ?? 0
+                DebugLog.shared.send("[Transcription] Mic ASR text (\(micText.count) chars, \(micTokenCount) tokens): \(micText.prefix(200))")
+            }
+
+            // Step 6: Build structured transcript
             states[id] = .transcribing(progress: 0.9)
 
-            // Match speakers against known profiles
+            // Match remote speakers against known profiles
             let speakerMatches = matchSpeakers(diarization: diarizationResult)
 
-            let transcript = Self.buildTranscript(
-                asr: asrResult,
+            let transcript = Self.buildTwoTrackTranscript(
+                systemAsr: systemAsrResult,
+                micAsr: micAsrResult,
                 diarization: diarizationResult,
                 speakerMatches: speakerMatches,
                 recordingId: id
@@ -113,8 +148,7 @@ final class TranscriptionManager: ObservableObject {
             let data = try encoder.encode(transcript)
             try data.write(to: recording.transcriptURL, options: .atomic)
 
-            // Clean up temp audio
-            try? FileManager.default.removeItem(at: audioURL)
+            // Keep temp audio files for debugging (audio-system.m4a, audio-mic.m4a)
 
             states[id] = .done
         } catch {
@@ -176,18 +210,41 @@ final class TranscriptionManager: ObservableObject {
 
     // MARK: - Audio Extraction
 
-    private func extractAudio(from videoURL: URL, to outputURL: URL) async throws {
+    /// Extract a specific audio track by index from the video file.
+    /// trackIndex 0 = system audio, trackIndex 1 = mic audio.
+    private func extractAudioTrack(from videoURL: URL, trackIndex: Int, to outputURL: URL) async throws {
         let asset = AVAsset(url: videoURL)
+        let audioTracks = try await asset.loadTracks(withMediaType: .audio)
+
+        guard trackIndex < audioTracks.count else {
+            throw TranscriptionError.audioTrackNotFound(trackIndex)
+        }
+
+        let sourceTrack = audioTracks[trackIndex]
+        let composition = AVMutableComposition()
+
+        guard let compositionTrack = composition.addMutableTrack(
+            withMediaType: .audio,
+            preferredTrackID: kCMPersistentTrackID_Invalid
+        ) else {
+            throw TranscriptionError.audioExtractionFailed
+        }
+
+        let duration = try await asset.load(.duration)
+        try compositionTrack.insertTimeRange(
+            CMTimeRange(start: .zero, duration: duration),
+            of: sourceTrack,
+            at: .zero
+        )
 
         guard let exportSession = AVAssetExportSession(
-            asset: asset,
+            asset: composition,
             presetName: AVAssetExportPresetAppleM4A
         ) else {
             throw TranscriptionError.audioExtractionFailed
         }
 
         try? FileManager.default.removeItem(at: outputURL)
-
         exportSession.outputFileType = .m4a
         exportSession.outputURL = outputURL
 
@@ -196,6 +253,11 @@ final class TranscriptionManager: ObservableObject {
         guard exportSession.status == .completed else {
             throw exportSession.error ?? TranscriptionError.audioExtractionFailed
         }
+    }
+
+    /// Legacy: extract first audio track (system audio)
+    private func extractAudio(from videoURL: URL, to outputURL: URL) async throws {
+        try await extractAudioTrack(from: videoURL, trackIndex: 0, to: outputURL)
     }
 
     // MARK: - Build Structured Transcript
@@ -337,6 +399,115 @@ final class TranscriptionManager: ObservableObject {
                      "Speaker E", "Speaker F", "Speaker G", "Speaker H"]
         return index < names.count ? names[index] : "Speaker \(index + 1)"
     }
+
+    // MARK: - Two-Track Transcript Building
+
+    private static let localSpeakerId = "__local_mic__"
+
+    static func buildTwoTrackTranscript(
+        systemAsr: ASRResult,
+        micAsr: ASRResult?,
+        diarization: DiarizationResult,
+        speakerMatches: [String: SpeakerMatch],
+        recordingId: String
+    ) -> Transcript {
+        // Build remote speaker segments from system audio + diarization
+        let remoteTranscript = buildTranscript(
+            asr: systemAsr,
+            diarization: diarization,
+            speakerMatches: speakerMatches,
+            recordingId: recordingId
+        )
+
+        DebugLog.shared.send("[Transcription] Remote segments: \(remoteTranscript.segments.count), speakers: \(remoteTranscript.speakers.map { $0.name })")
+
+        // If no mic track, just return remote-only transcript
+        guard let micAsr = micAsr else {
+            DebugLog.shared.send("[Transcription] No mic ASR, returning remote-only transcript")
+            return remoteTranscript
+        }
+
+        DebugLog.shared.send("[Transcription] Mic ASR text: '\(micAsr.text.prefix(100))', tokens: \(micAsr.tokenTimings?.count ?? 0)")
+
+        // Build local (mic) segments — all attributed to local speaker
+        var micSegments: [TranscriptSegment] = []
+        if let tokenTimings = micAsr.tokenTimings, !tokenTimings.isEmpty {
+            // Group tokens into sentence-like segments (flush every ~10s or on long pause)
+            var currentText = ""
+            var segStart: TimeInterval = 0
+            var segEnd: TimeInterval = 0
+            var lastEnd: TimeInterval = 0
+
+            for token in tokenTimings {
+                let gap = token.startTime - lastEnd
+                // Start new segment on large gap (>1s) or if segment is long (>10s)
+                if !currentText.isEmpty && (gap > 1.0 || (token.startTime - segStart) > 10.0) {
+                    let trimmed = currentText.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !trimmed.isEmpty {
+                        micSegments.append(TranscriptSegment(
+                            speakerId: localSpeakerId,
+                            startTime: segStart,
+                            endTime: segEnd,
+                            text: TextNormalizer.shared.normalizeSentence(trimmed)
+                        ))
+                    }
+                    currentText = ""
+                    segStart = token.startTime
+                }
+                if currentText.isEmpty {
+                    segStart = token.startTime
+                }
+                currentText += token.token
+                segEnd = token.endTime
+                lastEnd = token.endTime
+            }
+            // Flush last
+            let trimmed = currentText.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                micSegments.append(TranscriptSegment(
+                    speakerId: localSpeakerId,
+                    startTime: segStart,
+                    endTime: segEnd,
+                    text: TextNormalizer.shared.normalizeSentence(trimmed)
+                ))
+            }
+        } else if !micAsr.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            // No token timings — single segment for all mic text
+            micSegments.append(TranscriptSegment(
+                speakerId: localSpeakerId,
+                startTime: 0,
+                endTime: 0,
+                text: TextNormalizer.shared.normalizeSentence(micAsr.text)
+            ))
+        }
+
+        DebugLog.shared.send("[Transcription] Built \(micSegments.count) mic segments")
+        for (i, seg) in micSegments.enumerated() {
+            DebugLog.shared.send("[Transcription]   mic[\(i)]: \(String(format: "%.1f", seg.startTime))-\(String(format: "%.1f", seg.endTime))s '\(seg.text.prefix(60))'")
+        }
+
+        // Merge and sort all segments chronologically
+        var allSegments = remoteTranscript.segments + micSegments
+        allSegments.sort { $0.startTime < $1.startTime }
+
+        // Build speaker list: keep remote speakers + add "Me"
+        var speakers = remoteTranscript.speakers
+        if !micSegments.isEmpty {
+            speakers.append(TranscriptSpeaker(
+                id: localSpeakerId,
+                name: "Me",
+                color: speakers.count % TranscriptSpeaker.colors.count
+            ))
+        }
+
+        return Transcript(
+            version: Transcript.currentVersion,
+            recordingId: recordingId,
+            createdAt: Date(),
+            speakers: speakers,
+            segments: allSegments
+        )
+    }
 }
 
 struct SpeakerMatch {
@@ -348,11 +519,13 @@ struct SpeakerMatch {
 enum TranscriptionError: LocalizedError {
     case modelNotLoaded
     case audioExtractionFailed
+    case audioTrackNotFound(Int)
 
     var errorDescription: String? {
         switch self {
         case .modelNotLoaded: return "AI models failed to load."
         case .audioExtractionFailed: return "Could not extract audio from video."
+        case .audioTrackNotFound(let index): return "Audio track \(index) not found in video."
         }
     }
 }
