@@ -1,6 +1,6 @@
-# MacRecord
+# Spoke (formerly MacRecord)
 
-Native macOS screen recorder with transcription and speaker diarization.
+Local-first meeting recorder with AI transcription, speaker diarization, and AI agent integration.
 
 ## Build & Run
 
@@ -15,16 +15,21 @@ No tests. Add new source files to `MacRecord/Sources/` — XcodeGen picks them u
 ## Architecture
 
 - **project.yml** — XcodeGen project config. Dependencies, signing, entitlements all live here.
-- **MacRecordApp.swift** — Entry point. Creates all `@StateObject` stores and injects them as environment objects.
-- **RecordingManager.swift** — ScreenCaptureKit capture + AVAssetWriter. `SampleWriter` handles thread-safe sample writing with pause/resume. `MicrophoneCapture` captures mic via AVAudioEngine with echo cancellation, writes as a second audio track.
-- **ContentView.swift** — Main UI. Recordings list, floating record button, source picker overlay, active recording bar.
-- **RecordingDetailView.swift** — HSplitView with AVPlayerView (custom NSViewRepresentable) and structured transcript with click-to-seek.
+- **MacRecordApp.swift** — Entry point. Creates all `@StateObject` stores and injects them as environment objects. Forces dark mode.
+- **AppTheme.swift** — `SpokeTheme` color palette and custom button styles. Superlist-inspired dark navy theme with purple accents.
+- **ContentView.swift** — Main UI. HSplitView sidebar (recordings list) + detail area. Source picker as sheet.
+- **RecordingDetailView.swift** — HSplitView with AVPlayerView and structured transcript with click-to-seek.
 - **RecordingsStore.swift** — File-based recording storage in `~/Documents/MacRecord/`. Each recording is a folder with `recording.mov` + optional `transcript.json`.
+- **RecordingManager.swift** — ScreenCaptureKit capture + AVAssetWriter. `SampleWriter` handles thread-safe sample writing with pause/resume. `MicrophoneCapture` captures mic via AVAudioEngine with echo cancellation, writes as a second audio track.
 - **TranscriptionManager.swift** — Orchestrates: extract audio → ASR (FluidAudio Parakeet) → diarization → speaker matching → ITN → save JSON.
 - **TranscriptModels.swift** — `Transcript`, `TranscriptSpeaker`, `TranscriptSegment` Codable structs.
 - **SpeakerProfile.swift** — `SpeakerProfile` model + `SpeakerProfileStore`. Stored in `~/Library/Application Support/MacRecord/Speakers/{uuid}/`.
 - **SpeakerProfilesView.swift** — Speaker profile management UI with voice enrollment.
 - **FloatingToolbar.swift** — NSPanel-based floating toolbar during recording.
+
+## Design System
+
+All colors and styles are in `AppTheme.swift` via `SpokeTheme`. Dark navy backgrounds, purple accents, muted text hierarchy. Button styles: `SpokeAccentButtonStyle`, `SpokeRecordButtonStyle`, `SpokeGhostButtonStyle`.
 
 ## Key Libraries
 
@@ -35,7 +40,8 @@ No tests. Add new source files to `MacRecord/Sources/` — XcodeGen picks them u
 ## Adding Features
 
 1. UI views go in `MacRecord/Sources/`. Wire new stores in `MacRecordApp.swift` as `@StateObject` + `.environmentObject()`.
-2. New data models: add Codable structs, store as JSON in the recording folder or app support.
-3. Audio processing: FluidAudio SDK handles ASR, diarization, embeddings. See `TranscriptionManager.swift` for the full pipeline.
-4. Recording pipeline: `RecordingManager` → `SampleWriter` handles all sample buffers. Mic audio goes through `MicrophoneCapture` with echo cancellation enabled.
-5. After changes, run `xcodegen generate` if you added/removed files, then build.
+2. Use `SpokeTheme` colors and button styles for consistency.
+3. New data models: add Codable structs, store as JSON in the recording folder or app support.
+4. Audio processing: FluidAudio SDK handles ASR, diarization, embeddings. See `TranscriptionManager.swift` for the full pipeline.
+5. Recording pipeline: `RecordingManager` → `SampleWriter` handles all sample buffers. Mic audio goes through `MicrophoneCapture` with echo cancellation enabled.
+6. After changes, run `xcodegen generate` if you added/removed files, then build.

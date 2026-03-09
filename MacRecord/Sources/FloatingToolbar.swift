@@ -40,38 +40,29 @@ final class FloatingToolbarController: ObservableObject {
             .environmentObject(recordingsStore)
 
         let hostingView = NSHostingView(rootView: toolbarView)
-        hostingView.frame = NSRect(x: 0, y: 0, width: 280, height: 56)
+        hostingView.frame = NSRect(x: 0, y: 0, width: 260, height: 48)
 
-        // Find the screen being recorded
         let targetScreen = Self.screenForRecording(recordingManager) ?? NSScreen.main ?? NSScreen.screens.first
         let screenFrame = targetScreen?.visibleFrame ?? .zero
-        let x = screenFrame.midX - 140
-        let y = screenFrame.maxY - 70
+        let x = screenFrame.midX - 130
+        let y = screenFrame.maxY - 64
 
-        let panel = FloatingPanel(contentRect: NSRect(x: x, y: y, width: 280, height: 56))
+        let panel = FloatingPanel(contentRect: NSRect(x: x, y: y, width: 260, height: 48))
         panel.contentView = hostingView
-
         panel.orderFrontRegardless()
         self.panel = panel
     }
 
-    /// Find the NSScreen matching the recording source
     private static func screenForRecording(_ manager: RecordingManager) -> NSScreen? {
         if manager.recordingMode == .display, let display = manager.selectedDisplay {
-            // Match SCDisplay to NSScreen by CGDirectDisplayID
             return NSScreen.screens.first { screen in
-                guard let screenNumber = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID else {
-                    return false
-                }
+                guard let screenNumber = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID else { return false }
                 return screenNumber == display.displayID
             }
         } else if manager.recordingMode == .window, let window = manager.selectedWindow {
-            // Find which screen contains the window's center
             let windowFrame = window.frame
             let center = CGPoint(x: windowFrame.midX, y: windowFrame.midY)
-            return NSScreen.screens.first { screen in
-                screen.frame.contains(center)
-            }
+            return NSScreen.screens.first { screen in screen.frame.contains(center) }
         }
         return nil
     }
@@ -89,23 +80,19 @@ struct FloatingToolbarView: View {
     @EnvironmentObject var recordingsStore: RecordingsStore
 
     var body: some View {
-        HStack(spacing: 14) {
-            // Recording indicator + time
-            HStack(spacing: 8) {
-                Circle()
-                    .fill(.red)
-                    .frame(width: 10, height: 10)
-                    .shadow(color: .red.opacity(0.6), radius: 4)
+        HStack(spacing: 10) {
+            Circle()
+                .fill(Color(red: 0.937, green: 0.267, blue: 0.267))
+                .frame(width: 8, height: 8)
+                .shadow(color: Color(red: 0.937, green: 0.267, blue: 0.267).opacity(0.5), radius: 3)
 
-                Text(formatTime(recordingManager.elapsedTime))
-                    .font(.system(.body, design: .monospaced, weight: .semibold))
-                    .foregroundStyle(.primary)
-                    .monospacedDigit()
-            }
+            Text(formatTime(recordingManager.elapsedTime))
+                .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                .foregroundStyle(.primary)
+                .monospacedDigit()
 
             Spacer()
 
-            // Pause / Resume
             Button {
                 Task {
                     if recordingManager.isPaused {
@@ -116,14 +103,12 @@ struct FloatingToolbarView: View {
                 }
             } label: {
                 Image(systemName: recordingManager.isPaused ? "play.fill" : "pause.fill")
-                    .font(.system(size: 16, weight: .semibold))
-                    .frame(width: 32, height: 32)
+                    .font(.system(size: 13, weight: .semibold))
+                    .frame(width: 28, height: 28)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .foregroundStyle(.primary)
 
-            // Stop button
             Button {
                 Task {
                     await recordingManager.stopRecording()
@@ -131,19 +116,22 @@ struct FloatingToolbarView: View {
                 }
             } label: {
                 Image(systemName: "stop.fill")
-                    .font(.system(size: 14, weight: .bold))
+                    .font(.system(size: 11, weight: .bold))
                     .foregroundStyle(.white)
-                    .frame(width: 32, height: 32)
-                    .background(.red, in: RoundedRectangle(cornerRadius: 8))
+                    .frame(width: 28, height: 28)
+                    .background(
+                        RoundedRectangle(cornerRadius: 7)
+                            .fill(Color(red: 0.937, green: 0.267, blue: 0.267))
+                    )
             }
             .buttonStyle(.plain)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
         .background {
-            RoundedRectangle(cornerRadius: 14)
-                .fill(.ultraThinMaterial)
-                .shadow(color: .black.opacity(0.2), radius: 8, y: 2)
+            RoundedRectangle(cornerRadius: 12)
+                .fill(.regularMaterial)
+                .shadow(color: .black.opacity(0.15), radius: 10, y: 3)
         }
     }
 
@@ -151,9 +139,7 @@ struct FloatingToolbarView: View {
         let hours = Int(interval) / 3600
         let minutes = (Int(interval) % 3600) / 60
         let seconds = Int(interval) % 60
-        if hours > 0 {
-            return String(format: "%d:%02d:%02d", hours, minutes, seconds)
-        }
+        if hours > 0 { return String(format: "%d:%02d:%02d", hours, minutes, seconds) }
         return String(format: "%02d:%02d", minutes, seconds)
     }
 }

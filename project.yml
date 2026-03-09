@@ -25,8 +25,8 @@ targets:
     info:
       path: MacRecord/Resources/Info.plist
       properties:
-        CFBundleName: MacRecord
-        CFBundleDisplayName: MacRecord
+        CFBundleName: Spoke
+        CFBundleDisplayName: Spoke
         CFBundleIdentifier: com.tinyworks.MacRecord
         CFBundleVersion: "1"
         CFBundleShortVersionString: "1.0"

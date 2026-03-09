@@ -7,24 +7,28 @@ struct SpeakerProfilesView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Header
             HStack {
                 Text("Speaker Profiles")
-                    .font(.title2.weight(.bold))
+                    .font(.system(size: 20, weight: .bold))
+                    .foregroundStyle(SpokeTheme.textPrimary)
                 Spacer()
                 Button {
                     showAddSheet = true
                 } label: {
-                    Label("Add Speaker", systemImage: "person.badge.plus")
+                    HStack(spacing: 6) {
+                        Image(systemName: "person.badge.plus")
+                            .font(.system(size: 12))
+                        Text("Add Speaker")
+                    }
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.small)
+                .buttonStyle(SpokeAccentButtonStyle())
             }
             .padding(.horizontal, 24)
-            .padding(.vertical, 14)
-            .background(.bar)
+            .padding(.vertical, 18)
 
-            Divider()
+            Rectangle()
+                .fill(SpokeTheme.divider)
+                .frame(height: 1)
 
             if speakerProfileStore.profiles.isEmpty {
                 emptyState
@@ -32,6 +36,7 @@ struct SpeakerProfilesView: View {
                 profilesList
             }
         }
+        .background(SpokeTheme.contentBg)
         .sheet(isPresented: $showAddSheet) {
             AddSpeakerSheet()
                 .environmentObject(speakerProfileStore)
@@ -42,33 +47,39 @@ struct SpeakerProfilesView: View {
         VStack(spacing: 16) {
             Spacer()
             Image(systemName: "person.2.wave.2")
-                .font(.system(size: 48))
-                .foregroundStyle(.quaternary)
+                .font(.system(size: 40))
+                .foregroundStyle(SpokeTheme.textTertiary)
             Text("No Speaker Profiles")
-                .font(.title3)
-                .foregroundStyle(.secondary)
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(SpokeTheme.textSecondary)
             Text("Add profiles to identify speakers in your recordings.\nStart by adding yourself!")
-                .font(.body)
-                .foregroundStyle(.tertiary)
+                .font(.system(size: 13))
+                .foregroundStyle(SpokeTheme.textTertiary)
                 .multilineTextAlignment(.center)
             Button {
                 showAddSheet = true
             } label: {
-                Label("Set Up Your Profile", systemImage: "person.badge.plus")
+                HStack(spacing: 6) {
+                    Image(systemName: "person.badge.plus")
+                    Text("Set Up Your Profile")
+                }
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(SpokeAccentButtonStyle())
             Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var profilesList: some View {
-        List {
-            ForEach(speakerProfileStore.profiles) { profile in
-                SpeakerProfileRow(profile: profile)
+        ScrollView {
+            LazyVStack(spacing: 2) {
+                ForEach(speakerProfileStore.profiles) { profile in
+                    SpeakerProfileRow(profile: profile)
+                        .padding(.horizontal, 12)
+                }
             }
+            .padding(.vertical, 8)
         }
-        .listStyle(.inset(alternatesRowBackgrounds: true))
     }
 }
 
@@ -78,36 +89,37 @@ struct SpeakerProfileRow: View {
     let profile: SpeakerProfile
     @EnvironmentObject var speakerProfileStore: SpeakerProfileStore
     @State private var showDeleteConfirmation = false
+    @State private var isHovered = false
 
     var body: some View {
         HStack(spacing: 14) {
-            // Photo
             profilePhoto
-                .frame(width: 44, height: 44)
+                .frame(width: 40, height: 40)
 
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
                     Text(profile.name)
-                        .font(.body.weight(.medium))
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(SpokeTheme.textPrimary)
                     if profile.isCurrentUser {
                         Text("You")
-                            .font(.caption2.weight(.semibold))
+                            .font(.system(size: 10, weight: .semibold))
                             .foregroundStyle(.white)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
-                            .background(Capsule().fill(.blue))
+                            .background(Capsule().fill(SpokeTheme.accent))
                     }
                 }
                 HStack(spacing: 6) {
                     if !profile.embedding.isEmpty {
                         Label("Voice enrolled", systemImage: "checkmark.circle.fill")
-                            .foregroundStyle(.green)
+                            .foregroundStyle(SpokeTheme.success)
                     } else {
                         Label("No voice sample", systemImage: "xmark.circle")
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(SpokeTheme.textTertiary)
                     }
                 }
-                .font(.caption)
+                .font(.system(size: 11))
             }
 
             Spacer()
@@ -116,11 +128,19 @@ struct SpeakerProfileRow: View {
                 showDeleteConfirmation = true
             } label: {
                 Image(systemName: "trash")
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 12))
+                    .foregroundStyle(SpokeTheme.textTertiary)
             }
             .buttonStyle(.plain)
+            .opacity(isHovered ? 1 : 0)
         }
-        .padding(.vertical, 4)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(isHovered ? SpokeTheme.sidebarHover : Color.clear)
+        )
+        .onHover { isHovered = $0 }
         .alert("Delete Speaker Profile?", isPresented: $showDeleteConfirmation) {
             Button("Cancel", role: .cancel) {}
             Button("Delete", role: .destructive) {
@@ -140,11 +160,11 @@ struct SpeakerProfileRow: View {
                 .clipShape(Circle())
         } else {
             Circle()
-                .fill(Color.accentColor.opacity(0.15))
+                .fill(SpokeTheme.accent.opacity(0.12))
                 .overlay(
                     Text(String(profile.name.prefix(1)).uppercased())
-                        .font(.title3.weight(.semibold))
-                        .foregroundStyle(Color.accentColor)
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(SpokeTheme.accent)
                 )
         }
     }
@@ -159,92 +179,89 @@ struct AddSpeakerSheet: View {
     @State private var name = ""
     @State private var isCurrentUser = false
     @State private var photo: NSImage?
-    @State private var isRecording = false
     @State private var voiceSampleURL: URL?
     @State private var embedding: [Float] = []
     @State private var extractingEmbedding = false
     @State private var errorMessage: String?
-    @State private var audioLevel: Float = 0
     @StateObject private var voiceRecorder = VoiceSampleRecorder()
 
     var body: some View {
         VStack(spacing: 0) {
-            // Header
             HStack {
                 Text("New Speaker Profile")
-                    .font(.headline)
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(SpokeTheme.textPrimary)
                 Spacer()
                 Button { dismiss() } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .font(.title2)
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 22))
+                        .foregroundStyle(SpokeTheme.textTertiary)
                 }
                 .buttonStyle(.plain)
             }
-            .padding(20)
+            .padding(.horizontal, 24)
+            .padding(.top, 20)
+            .padding(.bottom, 14)
 
-            Divider()
+            Rectangle()
+                .fill(SpokeTheme.divider)
+                .frame(height: 1)
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
-                    // Name
                     VStack(alignment: .leading, spacing: 6) {
                         Text("Name")
-                            .font(.subheadline.weight(.medium))
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(SpokeTheme.textSecondary)
                         TextField("e.g. John Smith", text: $name)
                             .textFieldStyle(.roundedBorder)
                     }
 
-                    // Is current user
                     Toggle("This is me", isOn: $isCurrentUser)
+                        .foregroundStyle(SpokeTheme.textPrimary)
 
-                    // Photo
                     VStack(alignment: .leading, spacing: 6) {
                         Text("Photo (optional)")
-                            .font(.subheadline.weight(.medium))
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(SpokeTheme.textSecondary)
                         HStack(spacing: 12) {
                             if let photo {
                                 Image(nsImage: photo)
                                     .resizable()
                                     .aspectRatio(contentMode: .fill)
-                                    .frame(width: 64, height: 64)
+                                    .frame(width: 56, height: 56)
                                     .clipShape(Circle())
                             } else {
                                 Circle()
-                                    .fill(Color.secondary.opacity(0.15))
-                                    .frame(width: 64, height: 64)
+                                    .fill(SpokeTheme.cardBg)
+                                    .frame(width: 56, height: 56)
                                     .overlay(
                                         Image(systemName: "person.fill")
-                                            .font(.title2)
-                                            .foregroundStyle(.secondary)
+                                            .font(.system(size: 20))
+                                            .foregroundStyle(SpokeTheme.textTertiary)
                                     )
                             }
-                            Button("Choose Photo...") {
-                                pickPhoto()
-                            }
-                            .buttonStyle(.bordered)
+                            Button("Choose Photo...") { pickPhoto() }
+                                .buttonStyle(SpokeGhostButtonStyle())
                         }
                     }
 
-                    // Voice sample
                     VStack(alignment: .leading, spacing: 6) {
                         Text("Voice Sample")
-                            .font(.subheadline.weight(.medium))
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(SpokeTheme.textSecondary)
                         Text("Record 5-10 seconds of speech to enable speaker identification.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .font(.system(size: 11))
+                            .foregroundStyle(SpokeTheme.textTertiary)
 
                         HStack(spacing: 12) {
                             if voiceRecorder.isRecording {
-                                // Recording indicator
                                 HStack(spacing: 8) {
-                                    Circle()
-                                        .fill(.red)
-                                        .frame(width: 8, height: 8)
+                                    Circle().fill(SpokeTheme.recording).frame(width: 8, height: 8)
                                     Text("Recording... \(String(format: "%.0fs", voiceRecorder.duration))")
-                                        .font(.system(.body, design: .monospaced))
+                                        .font(.system(size: 13, design: .monospaced))
+                                        .foregroundStyle(SpokeTheme.textPrimary)
                                 }
-
                                 Button("Stop") {
                                     Task {
                                         if let url = await voiceRecorder.stop() {
@@ -253,59 +270,62 @@ struct AddSpeakerSheet: View {
                                         }
                                     }
                                 }
-                                .buttonStyle(.borderedProminent)
-                                .tint(.red)
+                                .buttonStyle(SpokeRecordButtonStyle())
                             } else if extractingEmbedding {
-                                ProgressView()
-                                    .controlSize(.small)
+                                ProgressView().controlSize(.small)
                                 Text("Analyzing voice...")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(SpokeTheme.textSecondary)
                             } else if !embedding.isEmpty {
                                 Image(systemName: "checkmark.circle.fill")
-                                    .foregroundStyle(.green)
+                                    .foregroundStyle(SpokeTheme.success)
                                 Text("Voice enrolled")
-                                    .font(.caption)
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(SpokeTheme.textSecondary)
                                 Button("Re-record") {
                                     Task { try? await voiceRecorder.start() }
                                 }
-                                .buttonStyle(.bordered)
-                                .controlSize(.small)
+                                .buttonStyle(SpokeGhostButtonStyle())
                             } else {
                                 Button {
                                     Task { try? await voiceRecorder.start() }
                                 } label: {
-                                    Label("Record Voice", systemImage: "mic.fill")
+                                    HStack(spacing: 6) {
+                                        Image(systemName: "mic.fill")
+                                        Text("Record Voice")
+                                    }
                                 }
-                                .buttonStyle(.borderedProminent)
+                                .buttonStyle(SpokeAccentButtonStyle())
                             }
                         }
                     }
 
                     if let error = errorMessage {
                         Text(error)
-                            .font(.caption)
-                            .foregroundStyle(.red)
+                            .font(.system(size: 12))
+                            .foregroundStyle(SpokeTheme.recording)
                     }
                 }
-                .padding(20)
+                .padding(24)
             }
 
-            Divider()
+            Rectangle()
+                .fill(SpokeTheme.divider)
+                .frame(height: 1)
 
-            // Save button
             HStack {
                 Spacer()
                 Button("Cancel") { dismiss() }
-                    .buttonStyle(.bordered)
-                Button("Save Profile") {
-                    saveProfile()
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .buttonStyle(SpokeGhostButtonStyle())
+                Button("Save Profile") { saveProfile() }
+                    .buttonStyle(SpokeAccentButtonStyle())
+                    .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .opacity(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.5 : 1)
             }
-            .padding(20)
+            .padding(.horizontal, 24)
+            .padding(.vertical, 16)
         }
+        .background(SpokeTheme.contentBg)
         .frame(width: 440, height: 520)
     }
 
@@ -332,7 +352,6 @@ struct AddSpeakerSheet: View {
     private func saveProfile() {
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedName.isEmpty else { return }
-
         var profile = SpeakerProfile(
             id: UUID(),
             name: trimmedName,
@@ -342,7 +361,6 @@ struct AddSpeakerSheet: View {
             updatedAt: Date(),
             isCurrentUser: isCurrentUser
         )
-
         do {
             if let photo {
                 try speakerProfileStore.savePhoto(photo, for: &profile)
@@ -372,26 +390,20 @@ final class VoiceSampleRecorder: ObservableObject {
         let engine = AVAudioEngine()
         let inputNode = engine.inputNode
         let format = inputNode.outputFormat(forBus: 0)
-
         let tempURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("voice_sample_\(UUID().uuidString).wav")
-
         let file = try AVAudioFile(forWriting: tempURL, settings: format.settings)
-
         inputNode.installTap(onBus: 0, bufferSize: 4096, format: format) { buffer, _ in
             try? file.write(from: buffer)
         }
-
         engine.prepare()
         try engine.start()
-
         self.audioEngine = engine
         self.outputFile = file
         self.outputURL = tempURL
         self.isRecording = true
         self.startTime = Date()
         self.duration = 0
-
         timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
                 guard let self, let start = self.startTime else { return }
@@ -403,13 +415,11 @@ final class VoiceSampleRecorder: ObservableObject {
     func stop() async -> URL? {
         timer?.invalidate()
         timer = nil
-
         audioEngine?.inputNode.removeTap(onBus: 0)
         audioEngine?.stop()
         audioEngine = nil
         outputFile = nil
         isRecording = false
-
         return outputURL
     }
 }

@@ -4,27 +4,54 @@ import CoreMedia
 
 struct RecordingDetailView: View {
     let recording: Recording
+    @ObservedObject var playerModel: VideoPlayerModel
     @EnvironmentObject var recordingsStore: RecordingsStore
     @EnvironmentObject var transcriptionManager: TranscriptionManager
     @EnvironmentObject var speakerProfileStore: SpeakerProfileStore
-    @StateObject private var playerModel = VideoPlayerModel()
     @State private var transcript: Transcript?
     @State private var legacyText: String?
 
     var body: some View {
-        HSplitView {
-            videoPlayerSection
-                .frame(minWidth: 400)
+        VStack(spacing: 0) {
+            HStack { Spacer() }
+                .frame(height: 20)
 
-            transcriptionSection
-                .frame(minWidth: 280, idealWidth: 320)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    // Title
+                    Text(recording.filename)
+                        .font(.system(size: 32, weight: .bold))
+                        .foregroundStyle(SpokeTheme.textPrimary)
+                        .padding(.horizontal, 32)
+                        .padding(.bottom, 6)
+
+                    // Metadata
+                    HStack(spacing: 8) {
+                        Label {
+                            Text(recording.date, format: .dateTime.weekday(.abbreviated).month(.abbreviated).day().hour().minute())
+                        } icon: {
+                            Image(systemName: "calendar")
+                        }
+                        Text("·")
+                        Label(recording.formattedDuration, systemImage: "clock")
+                        Text("·")
+                        Label(recording.fileSize, systemImage: "doc")
+                    }
+                    .font(.system(size: 12))
+                    .foregroundStyle(SpokeTheme.textSecondary)
+                    .padding(.horizontal, 32)
+                    .padding(.bottom, 24)
+
+                    // Transcript card
+                    transcriptCard
+                        .padding(.horizontal, 24)
+                }
+                .padding(.top, 8)
+            }
         }
+        .background(SpokeTheme.contentBg)
         .onAppear {
-            playerModel.load(url: recording.videoURL)
             loadTranscript()
-        }
-        .onDisappear {
-            playerModel.pause()
         }
         .onReceive(transcriptionManager.$states) { states in
             if states[recording.id] == .done {
@@ -40,198 +67,228 @@ struct RecordingDetailView: View {
         }
     }
 
-    // MARK: - Video Player
+    // MARK: - Transcript Card (Superlist-style rounded card)
 
-    private var videoPlayerSection: some View {
-        VStack(spacing: 0) {
-            PlayerView(player: playerModel.player)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+    private var transcriptCard: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Card header
+            HStack(spacing: 12) {
+                // Transcript icon
+                ZStack {
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(SpokeTheme.accent.opacity(0.12))
+                        .frame(width: 36, height: 36)
+                    Image(systemName: "text.quote")
+                        .font(.system(size: 16))
+                        .foregroundStyle(SpokeTheme.accent)
+                }
 
-            HStack {
-                Text(recording.filename)
-                    .font(.headline)
-                    .lineLimit(1)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Meeting transcript")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(SpokeTheme.textPrimary)
+                    HStack(spacing: 6) {
+                        Text(recording.date, format: .dateTime.weekday(.abbreviated).month(.abbreviated).day())
+                        Text("·")
+                        Text(recording.date, style: .time)
+                        Text("·")
+                        Text(recording.formattedDuration)
+                    }
+                    .font(.system(size: 11))
+                    .foregroundStyle(SpokeTheme.textSecondary)
+                }
+
                 Spacer()
-                Text(recording.formattedDuration)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Text("·")
-                    .foregroundStyle(.secondary)
-                Text(recording.fileSize)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+
+                // Actions
+                HStack(spacing: 6) {
+                    if hasTranscript {
+                        Button { copyTranscription() } label: {
+                            Image(systemName: "doc.on.doc")
+                                .font(.system(size: 12))
+                        }
+                        .buttonStyle(SpokeGhostButtonStyle())
+                    }
+
+                    transcriptionActionButton
+                }
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
-            .background(.bar)
-        }
-    }
+            .padding(16)
 
-    // MARK: - Transcription
+            Rectangle()
+                .fill(SpokeTheme.divider)
+                .frame(height: 1)
+                .padding(.horizontal, 16)
 
-    private var transcriptionSection: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Label("Transcription", systemImage: "text.alignleft")
-                    .font(.headline)
-                Spacer()
-                transcriptionActions
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
-            .background(.bar)
-
-            Divider()
-
+            // Transcript content
             transcriptionContent
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(.vertical, 8)
         }
+        .background(
+            RoundedRectangle(cornerRadius: 14)
+                .fill(SpokeTheme.cardBg)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14)
+                        .strokeBorder(SpokeTheme.cardBorder, lineWidth: 1)
+                )
+        )
     }
+
+    // MARK: - Transcription Action Button
 
     @ViewBuilder
-    private var transcriptionActions: some View {
+    private var transcriptionActionButton: some View {
         let state = transcriptionManager.states[recording.id] ?? .idle
 
         switch state {
         case .idle:
             if hasTranscript {
-                Button { copyTranscription() } label: {
-                    Image(systemName: "doc.on.doc")
+                Button {
+                    Task { await transcriptionManager.transcribe(recording: recording) }
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "waveform")
+                            .font(.system(size: 11))
+                        Text("Redo")
+                    }
                 }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
+                .buttonStyle(SpokeGhostButtonStyle())
+            } else {
+                Button {
+                    Task { await transcriptionManager.transcribe(recording: recording) }
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "waveform")
+                            .font(.system(size: 11))
+                        Text("Transcribe")
+                    }
+                }
+                .buttonStyle(SpokeAccentButtonStyle())
             }
-
-            Button {
-                Task { await transcriptionManager.transcribe(recording: recording) }
-            } label: {
-                Label(
-                    hasTranscript ? "Re-transcribe" : "Transcribe",
-                    systemImage: "waveform"
-                )
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.small)
 
         case .extractingAudio, .downloadingModels, .transcribing, .diarizing:
             ProgressView()
                 .controlSize(.small)
 
         case .done:
-            Button { copyTranscription() } label: {
-                Image(systemName: "doc.on.doc")
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
-
             Button {
                 Task { await transcriptionManager.transcribe(recording: recording) }
             } label: {
-                Label("Re-transcribe", systemImage: "arrow.clockwise")
+                HStack(spacing: 5) {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 11))
+                    Text("Redo")
+                }
             }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
+            .buttonStyle(SpokeGhostButtonStyle())
 
         case .error:
             Button {
                 Task { await transcriptionManager.transcribe(recording: recording) }
             } label: {
-                Label("Retry", systemImage: "arrow.clockwise")
+                HStack(spacing: 5) {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 11))
+                    Text("Retry")
+                }
             }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
+            .buttonStyle(SpokeGhostButtonStyle())
         }
     }
+
+    // MARK: - Transcription Content
 
     @ViewBuilder
     private var transcriptionContent: some View {
         let state = transcriptionManager.states[recording.id] ?? .idle
 
         if let transcript, state == .idle || state == .done {
-            structuredTranscriptView(transcript)
+            structuredTranscriptContent(transcript)
         } else if let legacyText, state == .idle || state == .done {
-            ScrollView {
-                Text(legacyText)
-                    .textSelection(.enabled)
-                    .padding(16)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
+            Text(legacyText)
+                .textSelection(.enabled)
+                .font(.system(size: 13))
+                .foregroundStyle(SpokeTheme.textPrimary)
+                .padding(16)
+                .frame(maxWidth: .infinity, alignment: .leading)
         } else {
             switch state {
             case .extractingAudio:
-                progressView("Extracting audio...", progress: nil)
+                progressContent("Extracting audio...", progress: nil)
             case .downloadingModels:
-                progressView("Downloading AI models (first time only)...", progress: nil)
+                progressContent("Downloading AI models (first time only)...", progress: nil)
             case .transcribing(let progress):
-                progressView("Transcribing...", progress: progress)
+                progressContent("Transcribing...", progress: progress)
             case .diarizing:
-                progressView("Identifying speakers...", progress: nil)
+                progressContent("Identifying speakers...", progress: nil)
             case .error(let msg):
-                VStack(spacing: 8) {
+                VStack(spacing: 10) {
                     Image(systemName: "exclamationmark.triangle")
-                        .font(.largeTitle)
-                        .foregroundStyle(.red)
+                        .font(.system(size: 24))
+                        .foregroundStyle(SpokeTheme.recording)
                     Text(msg)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 12))
+                        .foregroundStyle(SpokeTheme.textSecondary)
                         .multilineTextAlignment(.center)
                 }
-                .padding()
+                .padding(24)
+                .frame(maxWidth: .infinity)
             default:
-                VStack(spacing: 12) {
+                // Empty state with placeholder lines
+                VStack(spacing: 16) {
                     Image(systemName: "waveform")
-                        .font(.system(size: 40))
-                        .foregroundStyle(.quaternary)
-                    Text("No Transcription")
-                        .font(.title3)
-                        .foregroundStyle(.secondary)
-                    Text("Click \"Transcribe\" to generate a\ntranscription with speaker detection.")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
+                        .font(.system(size: 24))
+                        .foregroundStyle(SpokeTheme.textTertiary)
+                    Text("Click \"Transcribe\" to generate a transcript\nwith speaker detection.")
+                        .font(.system(size: 13))
+                        .foregroundStyle(SpokeTheme.textTertiary)
                         .multilineTextAlignment(.center)
                 }
+                .padding(32)
+                .frame(maxWidth: .infinity)
             }
         }
     }
 
-    // MARK: - Structured Transcript View
-
-    private func structuredTranscriptView(_ transcript: Transcript) -> some View {
-        ScrollView {
-            VStack(spacing: 0) {
-                // Speaker summary
-                if transcript.speakers.count > 1 {
-                    HStack(spacing: 8) {
-                        ForEach(transcript.speakers) { speaker in
-                            HStack(spacing: 4) {
-                                Circle()
-                                    .fill(speakerColor(speaker.color))
-                                    .frame(width: 8, height: 8)
-                                Text(speaker.name)
-                                    .font(.caption2)
-                            }
+    private func structuredTranscriptContent(_ transcript: Transcript) -> some View {
+        VStack(spacing: 0) {
+            // Speaker summary
+            if transcript.speakers.count > 1 {
+                HStack(spacing: 10) {
+                    ForEach(transcript.speakers) { speaker in
+                        HStack(spacing: 5) {
+                            Circle()
+                                .fill(speakerColor(speaker.color))
+                                .frame(width: 7, height: 7)
+                            Text(speaker.name)
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(SpokeTheme.textSecondary)
                         }
-                        Spacer()
                     }
+                    Spacer()
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+
+                Rectangle()
+                    .fill(SpokeTheme.divider)
+                    .frame(height: 1)
                     .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
-                    .background(Color.secondary.opacity(0.05))
-                }
+            }
 
-                // Segments
-                LazyVStack(alignment: .leading, spacing: 2) {
-                    ForEach(transcript.segments) { segment in
-                        let speaker = transcript.speakers.first(where: { $0.id == segment.speakerId })
-                        TranscriptSegmentRow(
-                            segment: segment,
-                            speaker: speaker,
-                            speakerProfileStore: speakerProfileStore
-                        ) {
-                            playerModel.seek(to: segment.startTime)
-                        }
+            // Segments
+            LazyVStack(alignment: .leading, spacing: 0) {
+                ForEach(transcript.segments) { segment in
+                    let speaker = transcript.speakers.first(where: { $0.id == segment.speakerId })
+                    TranscriptSegmentRow(
+                        segment: segment,
+                        speaker: speaker,
+                        speakerProfileStore: speakerProfileStore
+                    ) {
+                        playerModel.seek(to: segment.startTime)
+                        playerModel.player.play()
                     }
                 }
-                .padding(.vertical, 8)
             }
         }
     }
@@ -241,23 +298,25 @@ struct RecordingDetailView: View {
     }
 
     private func speakerColor(_ index: Int) -> Color {
-        let colors: [Color] = [.blue, .red, .green, .orange, .purple, .teal, .pink, .mint]
-        return colors[index % colors.count]
+        SpokeTheme.speakerColors[index % SpokeTheme.speakerColors.count]
     }
 
-    private func progressView(_ label: String, progress: Double?) -> some View {
+    private func progressContent(_ label: String, progress: Double?) -> some View {
         VStack(spacing: 12) {
             if let progress {
                 ProgressView(value: progress)
-                    .frame(width: 200)
+                    .frame(width: 180)
+                    .tint(SpokeTheme.accent)
             } else {
                 ProgressView()
+                    .tint(SpokeTheme.accent)
             }
             Text(label)
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .font(.system(size: 12))
+                .foregroundStyle(SpokeTheme.textSecondary)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(32)
+        .frame(maxWidth: .infinity)
     }
 
     private func copyTranscription() {
@@ -281,34 +340,33 @@ struct TranscriptSegmentRow: View {
     let speaker: TranscriptSpeaker?
     let speakerProfileStore: SpeakerProfileStore
     let onSeek: () -> Void
+    @State private var isHovered = false
 
     private var speakerColor: Color {
-        let colors: [Color] = [.blue, .red, .green, .orange, .purple, .teal, .pink, .mint]
         let index = speaker?.color ?? 0
-        return colors[index % colors.count]
+        return SpokeTheme.speakerColors[index % SpokeTheme.speakerColors.count]
     }
 
     var body: some View {
         Button(action: onSeek) {
             HStack(alignment: .top, spacing: 10) {
-                // Speaker photo or initial
                 speakerAvatar
-                    .frame(width: 28, height: 28)
+                    .frame(width: 26, height: 26)
 
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 6) {
                         Text(speaker?.name ?? "Unknown")
-                            .font(.caption.weight(.semibold))
+                            .font(.system(size: 12, weight: .semibold))
                             .foregroundStyle(speakerColor)
 
                         Text(formatTimestamp(segment.startTime))
                             .font(.system(size: 10, design: .monospaced))
-                            .foregroundStyle(.tertiary)
+                            .foregroundStyle(SpokeTheme.textTertiary)
                     }
 
                     Text(segment.text)
-                        .font(.body)
-                        .foregroundStyle(.primary)
+                        .font(.system(size: 13))
+                        .foregroundStyle(SpokeTheme.textPrimary)
                         .textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -316,17 +374,15 @@ struct TranscriptSegmentRow: View {
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 16)
-            .padding(.vertical, 6)
+            .padding(.vertical, 7)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .background(Color.clear)
+        .background(isHovered ? SpokeTheme.sidebarHover : Color.clear)
         .onHover { hovering in
-            if hovering {
-                NSCursor.pointingHand.push()
-            } else {
-                NSCursor.pop()
-            }
+            isHovered = hovering
+            if hovering { NSCursor.pointingHand.push() }
+            else { NSCursor.pop() }
         }
     }
 
@@ -342,10 +398,10 @@ struct TranscriptSegmentRow: View {
                 .clipShape(Circle())
         } else {
             Circle()
-                .fill(speakerColor.opacity(0.15))
+                .fill(speakerColor.opacity(0.12))
                 .overlay(
                     Text(String((speaker?.name ?? "?").prefix(1)).uppercased())
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(speakerColor)
                 )
         }
