@@ -39,6 +39,7 @@ final class RecordingManager: NSObject, ObservableObject {
     private var lastPauseDate: Date?
     private let streamOutput = StreamOutput()
     private let writer = SampleWriter()
+    private var micCapture: MicrophoneCapture?
     let floatingToolbar = FloatingToolbarController()
 
     override init() {
@@ -142,13 +143,6 @@ final class RecordingManager: NSObject, ObservableObject {
             config.channelCount = 2
             config.excludesCurrentProcessAudio = true
 
-            if #available(macOS 15, *) {
-                config.captureMicrophone = true
-                if let defaultMic = AVCaptureDevice.default(for: .audio) {
-                    config.microphoneCaptureDeviceID = defaultMic.uniqueID
-                }
-            }
-
             // Set up output file in its own folder
             let recordingsDir = RecordingsStore.recordingsDirectory
             try FileManager.default.createDirectory(at: recordingsDir, withIntermediateDirectories: true)
@@ -170,13 +164,14 @@ final class RecordingManager: NSObject, ObservableObject {
             try stream.addStreamOutput(streamOutput, type: .screen, sampleHandlerQueue: videoQueue)
             try stream.addStreamOutput(streamOutput, type: .audio, sampleHandlerQueue: audioQueue)
 
-            if #available(macOS 15, *) {
-                let micQueue = DispatchQueue(label: "com.tinyworks.MacRecord.mic", qos: .userInitiated)
-                try stream.addStreamOutput(streamOutput, type: .microphone, sampleHandlerQueue: micQueue)
-            }
-
             try await stream.startCapture()
             self.stream = stream
+
+            // Capture mic via AVAudioEngine with echo cancellation + no ducking
+            let mic = MicrophoneCapture()
+            mic.writer = writer
+            try mic.start(debugOutputDir: folderURL)
+            micCapture = mic
 
             state = .recording
             isPaused = false
@@ -202,6 +197,9 @@ final class RecordingManager: NSObject, ObservableObject {
 
         stopTimer()
 
+        micCapture?.stop()
+        micCapture = nil
+
         do {
             try await stream?.stopCapture()
         } catch {}
@@ -216,6 +214,7 @@ final class RecordingManager: NSObject, ObservableObject {
     func pauseRecording() async {
         guard state == .recording, !isPaused else { return }
         writer.setPaused(true)
+        micCapture?.setPaused(true)
         isPaused = true
         lastPauseDate = Date()
         stopTimer()
@@ -228,6 +227,7 @@ final class RecordingManager: NSObject, ObservableObject {
         }
         lastPauseDate = nil
         writer.setPaused(false)
+        micCapture?.setPaused(false)
         isPaused = false
         startTimer()
     }
@@ -265,11 +265,16 @@ final class SampleWriter: @unchecked Sendable {
     private var micInput: AVAssetWriterInput?
     private var sessionStarted = false
     private var firstVideoTimestamp: CMTime?
+    private var sessionStartTime: CMTime? // The raw SCStream timestamp when session started
 
     // Pause support: track total paused time and offset timestamps
     private var paused = false
     private var pauseStartTime: CMTime?
     private var totalPausedTime: CMTime = .zero
+
+    // Mic timestamp alignment: offset between AVAudioEngine host time and SCStream time
+    private var micTimeOffset: CMTime?
+    private var firstMicTimestamp: CMTime?
 
     func setPaused(_ value: Bool) {
         lock.lock()
@@ -357,7 +362,10 @@ final class SampleWriter: @unchecked Sendable {
         videoInput = vInput
         audioInput = aInput
         sessionStarted = false
+        sessionStartTime = nil
         firstVideoTimestamp = nil
+        micTimeOffset = nil
+        firstMicTimestamp = nil
         paused = false
         pauseStartTime = nil
         totalPausedTime = .zero
@@ -404,35 +412,75 @@ final class SampleWriter: @unchecked Sendable {
             guard assetWriter.status == .unknown else { return }
             assetWriter.startWriting()
             assetWriter.startSession(atSourceTime: adjustedTime)
+            sessionStartTime = timestamp
             sessionStarted = true
+            DebugLog.shared.send("[Writer] Session started at \(adjustedTime.seconds)s (raw: \(timestamp.seconds)s)")
         }
 
-        guard assetWriter.status == .writing else { return }
+        guard assetWriter.status == .writing else {
+            if assetWriter.status == .failed {
+                DebugLog.shared.send("[Writer] FAILED: \(assetWriter.error?.localizedDescription ?? "unknown")")
+            }
+            return
+        }
 
         switch type {
         case .screen:
-            if firstVideoTimestamp == nil { firstVideoTimestamp = adjustedTime }
+            if firstVideoTimestamp == nil {
+                firstVideoTimestamp = adjustedTime
+                DebugLog.shared.send("[Writer] First video at \(adjustedTime.seconds)s")
+            }
             if let videoInput = videoInput, videoInput.isReadyForMoreMediaData {
                 if let adjusted = Self.adjustedSampleBuffer(sampleBuffer, newTime: adjustedTime) {
                     videoInput.append(adjusted)
                 }
             }
-        case .audio:
+        case .audio, .microphone:
             guard firstVideoTimestamp != nil else { return }
             if let audioInput = audioInput, audioInput.isReadyForMoreMediaData {
                 if let adjusted = Self.adjustedSampleBuffer(sampleBuffer, newTime: adjustedTime) {
                     audioInput.append(adjusted)
                 }
             }
-        case .microphone:
-            guard firstVideoTimestamp != nil else { return }
-            if let micInput = micInput, micInput.isReadyForMoreMediaData {
-                if let adjusted = Self.adjustedSampleBuffer(sampleBuffer, newTime: adjustedTime) {
-                    micInput.append(adjusted)
-                }
-            }
         @unknown default:
             break
+        }
+    }
+
+    func appendMicSampleBuffer(_ sampleBuffer: CMSampleBuffer) {
+        lock.lock()
+        defer { lock.unlock() }
+
+        guard let assetWriter = assetWriter, sessionStarted, assetWriter.status == .writing else { return }
+        guard let sessionStart = sessionStartTime else { return }
+        guard firstVideoTimestamp != nil else { return }
+        guard !paused else { return }
+
+        let micTimestamp = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+        guard micTimestamp.isValid else { return }
+
+        // Compute offset between mic clock and SCStream clock on first mic sample
+        if micTimeOffset == nil {
+            micTimeOffset = CMTimeSubtract(micTimestamp, sessionStart)
+            DebugLog.shared.send("[Writer] Mic time offset: \(micTimeOffset!.seconds)s (mic: \(micTimestamp.seconds)s, session: \(sessionStart.seconds)s)")
+        }
+
+        // Align mic timestamp to SCStream time base, then apply pause adjustment
+        let alignedTime = CMTimeSubtract(micTimestamp, micTimeOffset!)
+        let adjustedTime = CMTimeSubtract(alignedTime, totalPausedTime)
+
+        // Don't write samples before the session start
+        guard adjustedTime >= firstVideoTimestamp! else { return }
+
+        if assetWriter.status == .failed {
+            DebugLog.shared.send("[Writer] FAILED on mic: \(assetWriter.error?.localizedDescription ?? "unknown")")
+            return
+        }
+
+        if let micInput = micInput, micInput.isReadyForMoreMediaData {
+            if let adjusted = Self.adjustedSampleBuffer(sampleBuffer, newTime: adjustedTime) {
+                micInput.append(adjusted)
+            }
         }
     }
 
@@ -466,13 +514,19 @@ final class SampleWriter: @unchecked Sendable {
         audioInput = nil
         micInput = nil
         sessionStarted = false
+        sessionStartTime = nil
         firstVideoTimestamp = nil
+        micTimeOffset = nil
+        firstMicTimestamp = nil
         paused = false
         pauseStartTime = nil
         totalPausedTime = .zero
         lock.unlock()
 
-        guard let writer = writer, started, writer.status == .writing else { return }
+        guard let writer = writer, started, writer.status == .writing else {
+            DebugLog.shared.send("[Writer] Finish — status: \(writer?.status.rawValue ?? -1), error: \(writer?.error?.localizedDescription ?? "none")")
+            return
+        }
 
         vInput?.markAsFinished()
         aInput?.markAsFinished()
@@ -497,6 +551,192 @@ final class StreamOutput: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked
 
     func stream(_ stream: SCStream, didStopWithError error: Error) {
         // Errors handled by writer status
+    }
+}
+
+// MARK: - Microphone Capture (echo-cancelled via VoiceProcessingIO, no speaker ducking)
+
+final class MicrophoneCapture: @unchecked Sendable {
+    var writer: SampleWriter?
+    var debugFileURL: URL?
+
+    private var audioEngine: AVAudioEngine?
+    private var debugFile: AVAudioFile?
+    private var paused = false
+    private let lock = NSLock()
+    private var sampleCount = 0
+
+    func start(debugOutputDir: URL? = nil) throws {
+        let engine = AVAudioEngine()
+        let inputNode = engine.inputNode
+
+        // VoiceProcessingIO: echo cancellation removes system audio (remote participants)
+        // from the mic signal, so the mic track contains only the local speaker
+        try inputNode.setVoiceProcessingEnabled(true)
+        DebugLog.shared.send("[MicCapture] Voice processing enabled")
+
+        // Prevent voice processing from reducing speaker volume
+        inputNode.voiceProcessingOtherAudioDuckingConfiguration =
+            AVAudioVoiceProcessingOtherAudioDuckingConfiguration(
+                enableAdvancedDucking: false,
+                duckingLevel: .min
+            )
+        DebugLog.shared.send("[MicCapture] Ducking disabled")
+
+        let hwFormat = inputNode.outputFormat(forBus: 0)
+        DebugLog.shared.send("[MicCapture] HW format: \(hwFormat)")
+
+        // Use mono 48kHz — install tap with this format directly so AVAudioEngine
+        // handles the conversion from the hardware format (which can be 9ch after voice processing)
+        guard let tapFormat = AVAudioFormat(
+            commonFormat: .pcmFormatFloat32,
+            sampleRate: 48000,
+            channels: 1,
+            interleaved: false
+        ) else { return }
+
+        DebugLog.shared.send("[MicCapture] Tap format: \(tapFormat)")
+
+        // Save raw mic audio as WAV for debugging
+        if let dir = debugOutputDir {
+            let wavURL = dir.appendingPathComponent("mic-debug.wav")
+            debugFileURL = wavURL
+            do {
+                debugFile = try AVAudioFile(forWriting: wavURL, settings: tapFormat.settings)
+                DebugLog.shared.send("[MicCapture] Debug WAV: \(wavURL.path)")
+            } catch {
+                DebugLog.shared.send("[MicCapture] Failed to create debug file: \(error)")
+            }
+        }
+
+        inputNode.installTap(onBus: 0, bufferSize: 4096, format: tapFormat) { [weak self] buffer, time in
+            guard let self else { return }
+
+            self.lock.lock()
+            let isPaused = self.paused
+            self.lock.unlock()
+            if isPaused { return }
+
+            // Write to debug WAV file
+            self.lock.lock()
+            let file = self.debugFile
+            self.lock.unlock()
+            if let file {
+                try? file.write(from: buffer)
+            }
+
+            self.sampleCount += 1
+            if self.sampleCount == 1 {
+                DebugLog.shared.send("[MicCapture] First mic buffer: \(buffer.frameLength) frames, format: \(buffer.format)")
+            } else if self.sampleCount % 500 == 0 {
+                DebugLog.shared.send("[MicCapture] \(self.sampleCount) buffers captured")
+            }
+
+            if let sampleBuffer = Self.createSampleBuffer(from: buffer, presentationTime: time) {
+                self.writer?.appendMicSampleBuffer(sampleBuffer)
+            }
+        }
+
+        engine.prepare()
+        try engine.start()
+        audioEngine = engine
+        DebugLog.shared.send("[MicCapture] Engine started")
+    }
+
+    func stop() {
+        audioEngine?.inputNode.removeTap(onBus: 0)
+        audioEngine?.stop()
+        audioEngine = nil
+        lock.lock()
+        debugFile = nil
+        lock.unlock()
+        DebugLog.shared.send("[MicCapture] Stopped (\(sampleCount) total buffers)")
+    }
+
+    func setPaused(_ value: Bool) {
+        lock.lock()
+        paused = value
+        lock.unlock()
+    }
+
+    private static func createSampleBuffer(from pcmBuffer: AVAudioPCMBuffer, presentationTime: AVAudioTime) -> CMSampleBuffer? {
+        let frameCount = Int(pcmBuffer.frameLength)
+        guard frameCount > 0 else { return nil }
+
+        let sampleRate = pcmBuffer.format.sampleRate
+        let channels = pcmBuffer.format.channelCount
+
+        var asbd = AudioStreamBasicDescription(
+            mSampleRate: sampleRate,
+            mFormatID: kAudioFormatLinearPCM,
+            mFormatFlags: kAudioFormatFlagIsFloat | kAudioFormatFlagIsNonInterleaved,
+            mBytesPerPacket: 4,
+            mFramesPerPacket: 1,
+            mBytesPerFrame: 4,
+            mChannelsPerFrame: channels,
+            mBitsPerChannel: 32,
+            mReserved: 0
+        )
+
+        var formatDesc: CMAudioFormatDescription?
+        CMAudioFormatDescriptionCreate(
+            allocator: kCFAllocatorDefault,
+            asbd: &asbd,
+            layoutSize: 0,
+            layout: nil,
+            magicCookieSize: 0,
+            magicCookie: nil,
+            extensions: nil,
+            formatDescriptionOut: &formatDesc
+        )
+        guard let formatDesc else { return nil }
+
+        let hostTime = presentationTime.hostTime
+        let cmTime = CMClockMakeHostTimeFromSystemUnits(hostTime)
+
+        var timing = CMSampleTimingInfo(
+            duration: CMTime(value: 1, timescale: CMTimeScale(sampleRate)),
+            presentationTimeStamp: cmTime,
+            decodeTimeStamp: .invalid
+        )
+
+        var sampleBuffer: CMSampleBuffer?
+
+        guard let floatData = pcmBuffer.floatChannelData else { return nil }
+        let dataSize = frameCount * MemoryLayout<Float>.size
+        var blockBuffer: CMBlockBuffer?
+
+        CMBlockBufferCreateWithMemoryBlock(
+            allocator: kCFAllocatorDefault,
+            memoryBlock: nil,
+            blockLength: dataSize,
+            blockAllocator: kCFAllocatorDefault,
+            customBlockSource: nil,
+            offsetToData: 0,
+            dataLength: dataSize,
+            flags: 0,
+            blockBufferOut: &blockBuffer
+        )
+        guard let blockBuffer else { return nil }
+
+        CMBlockBufferReplaceDataBytes(
+            with: floatData[0],
+            blockBuffer: blockBuffer,
+            offsetIntoDestination: 0,
+            dataLength: dataSize
+        )
+
+        CMAudioSampleBufferCreateReadyWithPacketDescriptions(
+            allocator: kCFAllocatorDefault,
+            dataBuffer: blockBuffer,
+            formatDescription: formatDesc,
+            sampleCount: frameCount,
+            presentationTimeStamp: cmTime,
+            packetDescriptions: nil,
+            sampleBufferOut: &sampleBuffer
+        )
+
+        return sampleBuffer
     }
 }
 
