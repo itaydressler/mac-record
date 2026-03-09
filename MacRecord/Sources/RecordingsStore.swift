@@ -182,6 +182,25 @@ final class RecordingsStore: ObservableObject {
         refresh()
     }
 
+    func renameRecording(_ recording: Recording, to newName: String) -> Recording? {
+        let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed != recording.filename else { return nil }
+        // Sanitize: remove characters not allowed in folder names
+        let sanitized = trimmed.replacingOccurrences(of: "/", with: "-")
+            .replacingOccurrences(of: ":", with: "-")
+        let parentDir = recording.folderURL.deletingLastPathComponent()
+        let newFolderURL = parentDir.appendingPathComponent(sanitized)
+        guard !FileManager.default.fileExists(atPath: newFolderURL.path) else { return nil }
+        do {
+            try FileManager.default.moveItem(at: recording.folderURL, to: newFolderURL)
+            thumbnails.removeValue(forKey: recording.id)
+            let newRecording = Recording(folderURL: newFolderURL)
+            return newRecording
+        } catch {
+            return nil
+        }
+    }
+
     func revealInFinder(_ recording: Recording) {
         NSWorkspace.shared.activateFileViewerSelecting([recording.videoURL])
     }

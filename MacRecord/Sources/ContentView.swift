@@ -314,7 +314,9 @@ struct ContentView: View {
     @ViewBuilder
     private var mainContent: some View {
         if let recording = selectedRecording {
-            RecordingDetailView(recording: recording, playerModel: sharedPlayer)
+            RecordingDetailView(recording: recording, playerModel: sharedPlayer) { updated in
+                selectedRecording = updated
+            }
                 .id(recording.id)
         } else {
             welcomeContent

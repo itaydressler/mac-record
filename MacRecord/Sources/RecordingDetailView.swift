@@ -10,6 +10,9 @@ struct RecordingDetailView: View {
     @EnvironmentObject var speakerProfileStore: SpeakerProfileStore
     @State private var transcript: Transcript?
     @State private var legacyText: String?
+    @State private var editableTitle: String = ""
+    @FocusState private var isTitleFocused: Bool
+    var onRecordingRenamed: ((Recording) -> Void)?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -18,10 +21,16 @@ struct RecordingDetailView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    // Title
-                    Text(recording.filename)
+                    // Inline editable title
+                    TextField("Recording title", text: $editableTitle)
                         .font(.system(size: 32, weight: .bold))
                         .foregroundStyle(SpokeTheme.textPrimary)
+                        .textFieldStyle(.plain)
+                        .focused($isTitleFocused)
+                        .onSubmit { saveTitle() }
+                        .onChange(of: isTitleFocused) { _, focused in
+                            if !focused { saveTitle() }
+                        }
                         .padding(.horizontal, 32)
                         .padding(.bottom, 6)
 
@@ -51,12 +60,31 @@ struct RecordingDetailView: View {
         }
         .background(SpokeTheme.contentBg)
         .onAppear {
+            editableTitle = recording.filename
             loadTranscript()
         }
         .onReceive(transcriptionManager.$states) { states in
             if states[recording.id] == .done {
                 loadTranscript()
             }
+        }
+    }
+
+    private func saveTitle() {
+        let trimmed = editableTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed != recording.filename else {
+            editableTitle = recording.filename
+            return
+        }
+        if let updated = recordingsStore.renameRecording(recording, to: trimmed) {
+            editableTitle = updated.filename
+            onRecordingRenamed?(updated)
+            // Refresh the sidebar list after selection is updated
+            DispatchQueue.main.async {
+                recordingsStore.refresh()
+            }
+        } else {
+            editableTitle = recording.filename
         }
     }
 
