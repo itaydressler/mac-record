@@ -13,7 +13,7 @@ struct RecordingDetailView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack { Spacer() }
+            WindowDragArea()
                 .frame(height: 20)
 
             ScrollView {

@@ -11,6 +11,7 @@ struct ContentView: View {
     @State private var showSpeakerProfiles = false
     @State private var sidebarHoveredId: String?
     @StateObject private var sharedPlayer = VideoPlayerModel()
+    @State private var mediaPanelWidth: CGFloat = 340
 
     var body: some View {
         HStack(spacing: 0) {
@@ -20,7 +21,7 @@ struct ContentView: View {
 
             // Main content with rounded background
             mainContent
-                .frame(minWidth: 420)
+                .frame(minWidth: 320)
                 .background(
                     RoundedRectangle(cornerRadius: 14)
                         .fill(SpokeTheme.contentBg)
@@ -29,11 +30,14 @@ struct ContentView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 14))
                 .padding(.vertical, 6)
                 .padding(.leading, 4)
-                .padding(.trailing, 4)
+                .padding(.trailing, 0)
+
+            // Draggable resize handle
+            ResizeDivider(position: $mediaPanelWidth, isLeadingEdge: false)
 
             // Right media panel with rounded corners
             mediaPanel
-                .frame(minWidth: 280, idealWidth: 340, maxWidth: 500)
+                .frame(width: mediaPanelWidth)
                 .clipShape(RoundedRectangle(cornerRadius: 14))
                 .padding(.vertical, 6)
                 .padding(.trailing, 6)
@@ -44,6 +48,7 @@ struct ContentView: View {
             SpeakerProfilesView()
                 .environmentObject(speakerProfileStore)
                 .frame(width: 500, height: 480)
+                .onExitCommand { showSpeakerProfiles = false }
         }
         .sheet(isPresented: $showSourcePicker) {
             sourcePickerSheet
@@ -73,14 +78,17 @@ struct ContentView: View {
 
     private var sidebar: some View {
         VStack(spacing: 0) {
-            // Custom traffic lights
-            HStack(spacing: 8) {
-                TrafficLightButtons()
-                Spacer()
+            // Custom traffic lights + window drag area
+            ZStack {
+                WindowDragArea()
+                HStack(spacing: 8) {
+                    TrafficLightButtons()
+                    Spacer()
+                }
+                .padding(.horizontal, 18)
             }
-            .padding(.horizontal, 18)
-            .padding(.top, 16)
-            .padding(.bottom, 10)
+            .frame(height: 42)
+            .padding(.top, 2)
 
             // Nav items
             VStack(spacing: 2) {
@@ -315,7 +323,7 @@ struct ContentView: View {
 
     private var welcomeContent: some View {
         VStack(spacing: 0) {
-            HStack { Spacer() }
+            WindowDragArea()
                 .frame(height: 20)
 
             ScrollView {
@@ -605,6 +613,64 @@ struct ContentView: View {
         let seconds = Int(interval) % 60
         if hours > 0 { return String(format: "%d:%02d:%02d", hours, minutes, seconds) }
         return String(format: "%02d:%02d", minutes, seconds)
+    }
+}
+
+// MARK: - Window Drag Area
+
+struct WindowDragArea: NSViewRepresentable {
+    func makeNSView(context: Context) -> DraggableView {
+        DraggableView()
+    }
+    func updateNSView(_ nsView: DraggableView, context: Context) {}
+
+    class DraggableView: NSView {
+        override func mouseDown(with event: NSEvent) {
+            window?.performDrag(with: event)
+        }
+    }
+}
+
+// MARK: - Resize Divider
+
+struct ResizeDivider: View {
+    @Binding var position: CGFloat
+    let isLeadingEdge: Bool
+    let minSize: CGFloat = 220
+    let maxSize: CGFloat = 600
+    @State private var isDragging = false
+    @State private var dragStartWidth: CGFloat = 0
+
+    var body: some View {
+        Rectangle()
+            .fill(Color.clear)
+            .frame(width: 8)
+            .contentShape(Rectangle())
+            .onHover { hovering in
+                if hovering { NSCursor.resizeLeftRight.push() }
+                else { NSCursor.pop() }
+            }
+            .gesture(
+                DragGesture(minimumDistance: 1)
+                    .onChanged { value in
+                        if !isDragging {
+                            isDragging = true
+                            dragStartWidth = position
+                        }
+                        // Dragging left => right panel grows; dragging right => shrinks
+                        let delta = -value.translation.width
+                        let newWidth = dragStartWidth + delta
+                        position = min(max(newWidth, minSize), maxSize)
+                    }
+                    .onEnded { _ in
+                        isDragging = false
+                    }
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 1)
+                    .fill(isDragging ? SpokeTheme.accent.opacity(0.5) : SpokeTheme.divider)
+                    .frame(width: isDragging ? 2 : 1)
+            )
     }
 }
 

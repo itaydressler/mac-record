@@ -3,6 +3,7 @@ import AVFoundation
 
 struct SpeakerProfilesView: View {
     @EnvironmentObject var speakerProfileStore: SpeakerProfileStore
+    @Environment(\.dismiss) var dismiss
     @State private var showAddSheet = false
 
     var body: some View {
@@ -22,6 +23,12 @@ struct SpeakerProfilesView: View {
                     }
                 }
                 .buttonStyle(SpokeAccentButtonStyle())
+                Button { dismiss() } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 22))
+                        .foregroundStyle(SpokeTheme.textTertiary)
+                }
+                .buttonStyle(.plain)
             }
             .padding(.horizontal, 24)
             .padding(.vertical, 18)
