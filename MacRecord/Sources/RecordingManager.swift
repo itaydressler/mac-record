@@ -126,9 +126,15 @@ final class RecordingManager: NSObject, ObservableObject {
             }
 
             let config = SCStreamConfiguration()
-            let displaySize = filter.contentRect.size
-            config.width = Int(displaySize.width) * 2
-            config.height = Int(displaySize.height) * 2
+            if recordingMode == .window, let window = selectedWindow {
+                config.width = Int(window.frame.width) * 2
+                config.height = Int(window.frame.height) * 2
+                config.scalesToFit = true
+            } else {
+                let displaySize = filter.contentRect.size
+                config.width = Int(displaySize.width) * 2
+                config.height = Int(displaySize.height) * 2
+            }
             config.minimumFrameInterval = CMTime(value: 1, timescale: 30)
             config.showsCursor = true
             config.capturesAudio = true
