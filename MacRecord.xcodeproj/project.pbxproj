@@ -1,0 +1,419 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		15D313C6D0B61FB97A63C29D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 62B272E45DD8C7BEF1CCE97C /* Assets.xcassets */; };
+		2B129CD7C8FC4878DBBA011D /* MacRecordApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24113DC63C88E6980E577B0B /* MacRecordApp.swift */; };
+		2B4A6C32F44BF6907FAF910E /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 796E1343B28F6B87DCFAC8EA /* SettingsView.swift */; };
+		2B58C00CC59BEB933051DAB3 /* RecordingsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD76CCB7345E372898A9E929 /* RecordingsStore.swift */; };
+		2D31D2D4B280E21F91999C21 /* ASREngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73CCEB738B652D842F5A0102 /* ASREngine.swift */; };
+		3263945DF275D3CC7C7B87BC /* AppSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA82DF0E54E18159CE2FA945 /* AppSettings.swift */; };
+		67BF9A855D7735122CA982AC /* FloatingToolbar.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF8D1DC6394E5677BF510E87 /* FloatingToolbar.swift */; };
+		6F2F4BEC94430A006E46676D /* SpeakerProfilesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AFE1DBCAD5D992CEFCB468AE /* SpeakerProfilesView.swift */; };
+		74BC26C7BABC48A7F57C26F9 /* RecordingManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3303BB0045CC16A39326B497 /* RecordingManager.swift */; };
+		809190A0315402C7D22E9BB1 /* RecordingDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43EF9BA12E121807C48DF3BB /* RecordingDetailView.swift */; };
+		9AA43CB730097E5DE3976699 /* DebugLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4FE1B07484260FFFB4B4B33 /* DebugLog.swift */; };
+		9BE55C46DD2FBF5CF69758C1 /* TranscriptionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DC77811ACC582E20900BE61 /* TranscriptionManager.swift */; };
+		9F78DEC988718162D52C56BD /* SpeakerProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = D35DAC00BAF03AD82E03B212 /* SpeakerProfile.swift */; };
+		A0ED4076B514E3DC6802AAD1 /* FluidAudio in Frameworks */ = {isa = PBXBuildFile; productRef = 5B11279E667730AAAD416376 /* FluidAudio */; };
+		D34DED118B5BF80DEA5EE5C6 /* TranscriptModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0BC06387F2C5276482B67 /* TranscriptModels.swift */; };
+		DB1A0E9F881BA97E84BC86EC /* AppleSpeechEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CFAE4880200FDC897AD3406 /* AppleSpeechEngine.swift */; };
+		E2212BC36C9DF938BCE394BE /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B82079A97D64917C1B3E8A2 /* ContentView.swift */; };
+		E7AEB30A8030DEE5BC6C6192 /* AppTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29B3F6713B7AFE6DC9993A80 /* AppTheme.swift */; };
+		F790351084DCDB071D63CF8C /* FluidAudioEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F5CD044F28AA984CCCB0C0E /* FluidAudioEngine.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		24113DC63C88E6980E577B0B /* MacRecordApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacRecordApp.swift; sourceTree = "<group>"; };
+		29B3F6713B7AFE6DC9993A80 /* AppTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppTheme.swift; sourceTree = "<group>"; };
+		2B82079A97D64917C1B3E8A2 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		3303BB0045CC16A39326B497 /* RecordingManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingManager.swift; sourceTree = "<group>"; };
+		3F5CD044F28AA984CCCB0C0E /* FluidAudioEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FluidAudioEngine.swift; sourceTree = "<group>"; };
+		40B8023FE9D23F8ED6FF982D /* MacRecord.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MacRecord.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		43EF9BA12E121807C48DF3BB /* RecordingDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingDetailView.swift; sourceTree = "<group>"; };
+		62B272E45DD8C7BEF1CCE97C /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		6CFAE4880200FDC897AD3406 /* AppleSpeechEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleSpeechEngine.swift; sourceTree = "<group>"; };
+		6DC77811ACC582E20900BE61 /* TranscriptionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptionManager.swift; sourceTree = "<group>"; };
+		73CCEB738B652D842F5A0102 /* ASREngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ASREngine.swift; sourceTree = "<group>"; };
+		796E1343B28F6B87DCFAC8EA /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		AFE1DBCAD5D992CEFCB468AE /* SpeakerProfilesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeakerProfilesView.swift; sourceTree = "<group>"; };
+		C1A0BC06387F2C5276482B67 /* TranscriptModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptModels.swift; sourceTree = "<group>"; };
+		CD76CCB7345E372898A9E929 /* RecordingsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingsStore.swift; sourceTree = "<group>"; };
+		CF8D1DC6394E5677BF510E87 /* FloatingToolbar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FloatingToolbar.swift; sourceTree = "<group>"; };
+		D35DAC00BAF03AD82E03B212 /* SpeakerProfile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeakerProfile.swift; sourceTree = "<group>"; };
+		F4FE1B07484260FFFB4B4B33 /* DebugLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugLog.swift; sourceTree = "<group>"; };
+		FA82DF0E54E18159CE2FA945 /* AppSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSettings.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		432869368A3BE32EAFEE37CF /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A0ED4076B514E3DC6802AAD1 /* FluidAudio in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		1868A814A562DF630E7CA22D /* Sources */ = {
+			isa = PBXGroup;
+			children = (
+				6CFAE4880200FDC897AD3406 /* AppleSpeechEngine.swift */,
+				FA82DF0E54E18159CE2FA945 /* AppSettings.swift */,
+				29B3F6713B7AFE6DC9993A80 /* AppTheme.swift */,
+				73CCEB738B652D842F5A0102 /* ASREngine.swift */,
+				2B82079A97D64917C1B3E8A2 /* ContentView.swift */,
+				F4FE1B07484260FFFB4B4B33 /* DebugLog.swift */,
+				CF8D1DC6394E5677BF510E87 /* FloatingToolbar.swift */,
+				3F5CD044F28AA984CCCB0C0E /* FluidAudioEngine.swift */,
+				24113DC63C88E6980E577B0B /* MacRecordApp.swift */,
+				43EF9BA12E121807C48DF3BB /* RecordingDetailView.swift */,
+				3303BB0045CC16A39326B497 /* RecordingManager.swift */,
+				CD76CCB7345E372898A9E929 /* RecordingsStore.swift */,
+				796E1343B28F6B87DCFAC8EA /* SettingsView.swift */,
+				D35DAC00BAF03AD82E03B212 /* SpeakerProfile.swift */,
+				AFE1DBCAD5D992CEFCB468AE /* SpeakerProfilesView.swift */,
+				6DC77811ACC582E20900BE61 /* TranscriptionManager.swift */,
+				C1A0BC06387F2C5276482B67 /* TranscriptModels.swift */,
+			);
+			name = Sources;
+			path = MacRecord/Sources;
+			sourceTree = "<group>";
+		};
+		4A4D57FD6D0EC544A5569AD9 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				40B8023FE9D23F8ED6FF982D /* MacRecord.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		65D82BC5CD6B6A9C14CB377D = {
+			isa = PBXGroup;
+			children = (
+				F6ED04F791EF0255B5B1FA17 /* Resources */,
+				1868A814A562DF630E7CA22D /* Sources */,
+				4A4D57FD6D0EC544A5569AD9 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		F6ED04F791EF0255B5B1FA17 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				62B272E45DD8C7BEF1CCE97C /* Assets.xcassets */,
+			);
+			name = Resources;
+			path = MacRecord/Resources;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		070D8A77332384906621D878 /* MacRecord */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 6D7E06A745B7692AB92CA0C1 /* Build configuration list for PBXNativeTarget "MacRecord" */;
+			buildPhases = (
+				9A988E3A3CA425B77B399578 /* Sources */,
+				F7D94C0FB290D658F7B0FAD9 /* Resources */,
+				432869368A3BE32EAFEE37CF /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = MacRecord;
+			packageProductDependencies = (
+				5B11279E667730AAAD416376 /* FluidAudio */,
+			);
+			productName = MacRecord;
+			productReference = 40B8023FE9D23F8ED6FF982D /* MacRecord.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		3B2BD6F3D38790FE902DFFEF /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1600;
+				TargetAttributes = {
+					070D8A77332384906621D878 = {
+						DevelopmentTeam = SDKXSX2NHQ;
+						ProvisioningStyle = Manual;
+					};
+				};
+			};
+			buildConfigurationList = 5A0BFF3EAEC3FB067B242929 /* Build configuration list for PBXProject "MacRecord" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 65D82BC5CD6B6A9C14CB377D;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				E3331676780E860A87FB1B38 /* XCRemoteSwiftPackageReference "FluidAudio" */,
+			);
+			preferredProjectObjectVersion = 77;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				070D8A77332384906621D878 /* MacRecord */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		F7D94C0FB290D658F7B0FAD9 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				15D313C6D0B61FB97A63C29D /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		9A988E3A3CA425B77B399578 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				2D31D2D4B280E21F91999C21 /* ASREngine.swift in Sources */,
+				3263945DF275D3CC7C7B87BC /* AppSettings.swift in Sources */,
+				E7AEB30A8030DEE5BC6C6192 /* AppTheme.swift in Sources */,
+				DB1A0E9F881BA97E84BC86EC /* AppleSpeechEngine.swift in Sources */,
+				E2212BC36C9DF938BCE394BE /* ContentView.swift in Sources */,
+				9AA43CB730097E5DE3976699 /* DebugLog.swift in Sources */,
+				67BF9A855D7735122CA982AC /* FloatingToolbar.swift in Sources */,
+				F790351084DCDB071D63CF8C /* FluidAudioEngine.swift in Sources */,
+				2B129CD7C8FC4878DBBA011D /* MacRecordApp.swift in Sources */,
+				809190A0315402C7D22E9BB1 /* RecordingDetailView.swift in Sources */,
+				74BC26C7BABC48A7F57C26F9 /* RecordingManager.swift in Sources */,
+				2B58C00CC59BEB933051DAB3 /* RecordingsStore.swift in Sources */,
+				2B4A6C32F44BF6907FAF910E /* SettingsView.swift in Sources */,
+				9F78DEC988718162D52C56BD /* SpeakerProfile.swift in Sources */,
+				6F2F4BEC94430A006E46676D /* SpeakerProfilesView.swift in Sources */,
+				D34DED118B5BF80DEA5EE5C6 /* TranscriptModels.swift in Sources */,
+				9BE55C46DD2FBF5CF69758C1 /* TranscriptionManager.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		0122EC4D85F3430B86F0DB7E /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.9;
+			};
+			name = Debug;
+		};
+		32CF829F384FE464D3CF5A29 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = MacRecord/Resources/MacRecord.entitlements;
+				CODE_SIGN_IDENTITY = "Developer ID Application: BASE LABS LTD (SDKXSX2NHQ)";
+				CODE_SIGN_STYLE = Manual;
+				COMBINE_HIDPI_IMAGES = YES;
+				DEVELOPMENT_TEAM = SDKXSX2NHQ;
+				ENABLE_HARDENED_RUNTIME = YES;
+				INFOPLIST_FILE = MacRecord/Resources/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				OTHER_SWIFT_FLAGS = "$(inherited) -DSPEECH_ANALYZER_AVAILABLE";
+				PRODUCT_BUNDLE_IDENTIFIER = com.tinyworks.MacRecord;
+				SDKROOT = macosx;
+			};
+			name = Release;
+		};
+		9C1A7DB4664BB6DA50FEE945 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.9;
+			};
+			name = Release;
+		};
+		9FD207471462C73F7F8DF4FA /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = MacRecord/Resources/MacRecord.entitlements;
+				CODE_SIGN_IDENTITY = "Developer ID Application: BASE LABS LTD (SDKXSX2NHQ)";
+				CODE_SIGN_STYLE = Manual;
+				COMBINE_HIDPI_IMAGES = YES;
+				DEVELOPMENT_TEAM = SDKXSX2NHQ;
+				ENABLE_HARDENED_RUNTIME = YES;
+				INFOPLIST_FILE = MacRecord/Resources/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				OTHER_SWIFT_FLAGS = "$(inherited) -DSPEECH_ANALYZER_AVAILABLE";
+				PRODUCT_BUNDLE_IDENTIFIER = com.tinyworks.MacRecord;
+				SDKROOT = macosx;
+			};
+			name = Debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		5A0BFF3EAEC3FB067B242929 /* Build configuration list for PBXProject "MacRecord" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				0122EC4D85F3430B86F0DB7E /* Debug */,
+				9C1A7DB4664BB6DA50FEE945 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		6D7E06A745B7692AB92CA0C1 /* Build configuration list for PBXNativeTarget "MacRecord" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				9FD207471462C73F7F8DF4FA /* Debug */,
+				32CF829F384FE464D3CF5A29 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		E3331676780E860A87FB1B38 /* XCRemoteSwiftPackageReference "FluidAudio" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/FluidInference/FluidAudio.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.12.2;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		5B11279E667730AAAD416376 /* FluidAudio */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = E3331676780E860A87FB1B38 /* XCRemoteSwiftPackageReference "FluidAudio" */;
+			productName = FluidAudio;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = 3B2BD6F3D38790FE902DFFEF /* Project object */;
+}

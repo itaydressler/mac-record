@@ -6,10 +6,12 @@ struct ContentView: View {
     @EnvironmentObject var recordingsStore: RecordingsStore
     @EnvironmentObject var transcriptionManager: TranscriptionManager
     @EnvironmentObject var speakerProfileStore: SpeakerProfileStore
+    @EnvironmentObject var appSettings: AppSettings
     @State private var selectedRecording: Recording?
     @State private var showSourcePicker = false
     @State private var showSpeakerProfiles = false
     @State private var showDebugLog = false
+    @State private var showSettings = false
     @State private var sidebarHoveredId: String?
     @StateObject private var sharedPlayer = VideoPlayerModel()
     @State private var mediaPanelWidth: CGFloat = 340
@@ -115,6 +117,11 @@ struct ContentView: View {
                 .frame(width: 600, height: 400)
                 .onExitCommand { showDebugLog = false }
         }
+        .sheet(isPresented: $showSettings) {
+            SettingsView()
+                .environmentObject(appSettings)
+                .onExitCommand { showSettings = false }
+        }
         .onChange(of: selectedRecording?.id) { _, newId in
             if let recording = selectedRecording {
                 sharedPlayer.load(url: recording.videoURL)
@@ -218,6 +225,23 @@ struct ContentView: View {
                                 Circle().strokeBorder(SpokeTheme.border, lineWidth: 1)
                             )
                         Image(systemName: "ladybug.fill")
+                            .font(.system(size: 15))
+                            .foregroundStyle(SpokeTheme.textTertiary)
+                    }
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    showSettings = true
+                } label: {
+                    ZStack {
+                        Circle()
+                            .fill(SpokeTheme.windowBg)
+                            .frame(width: 36, height: 36)
+                            .overlay(
+                                Circle().strokeBorder(SpokeTheme.border, lineWidth: 1)
+                            )
+                        Image(systemName: "gearshape.fill")
                             .font(.system(size: 15))
                             .foregroundStyle(SpokeTheme.textTertiary)
                     }

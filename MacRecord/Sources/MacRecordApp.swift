@@ -6,6 +6,7 @@ struct MacRecordApp: App {
     @StateObject private var recordingsStore = RecordingsStore()
     @StateObject private var transcriptionManager = TranscriptionManager()
     @StateObject private var speakerProfileStore = SpeakerProfileStore()
+    @StateObject private var appSettings = AppSettings()
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 
     var body: some Scene {
@@ -15,9 +16,11 @@ struct MacRecordApp: App {
                 .environmentObject(recordingsStore)
                 .environmentObject(transcriptionManager)
                 .environmentObject(speakerProfileStore)
+                .environmentObject(appSettings)
                 .frame(minWidth: 900, minHeight: 560)
                 .onAppear {
                     transcriptionManager.speakerProfileStore = speakerProfileStore
+                    transcriptionManager.appSettings = appSettings
                 }
                 .onReceive(recordingManager.$state) { newState in
                     if newState == .recording {

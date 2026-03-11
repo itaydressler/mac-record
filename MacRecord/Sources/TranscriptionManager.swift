@@ -2,71 +2,72 @@ import Foundation
 import AVFoundation
 import FluidAudio
 
-enum TranscriptionState: Equatable {
-    case idle
-    case extractingAudio
-    case downloadingModels
-    case transcribing(progress: Double)
-    case diarizing
-    case done
-    case error(String)
-
-    static func == (lhs: TranscriptionState, rhs: TranscriptionState) -> Bool {
-        switch (lhs, rhs) {
-        case (.idle, .idle), (.extractingAudio, .extractingAudio),
-             (.downloadingModels, .downloadingModels),
-             (.diarizing, .diarizing), (.done, .done):
-            return true
-        case (.transcribing(let a), .transcribing(let b)):
-            return a == b
-        case (.error(let a), .error(let b)):
-            return a == b
-        default:
-            return false
-        }
-    }
-
-    var isError: Bool {
-        if case .error = self { return true }
-        return false
-    }
-}
-
 @MainActor
 final class TranscriptionManager: ObservableObject {
     @Published var states: [String: TranscriptionState] = [:]
     @Published var modelsReady = false
 
-    private var asrManager: AsrManager?
-    private var asrModels: AsrModels?
-    private var diarizerManager: OfflineDiarizerManager?
     var speakerProfileStore: SpeakerProfileStore?
+    var appSettings: AppSettings?
 
-    func ensureModelsLoaded(stateId: String) async throws {
-        if asrManager != nil && diarizerManager != nil { return }
+    // Active engine + the option it was built for (nil = not loaded yet)
+    private var loadedEngine: (option: TranscriptionEngineOption, engine: ASREngine)?
+    private var diarizerManager: OfflineDiarizerManager?
 
-        states[stateId] = .downloadingModels
+    // MARK: - Engine management
 
-        if asrModels == nil {
-            asrModels = try await AsrModels.downloadAndLoad(version: .v3)
+    private func engine(for option: TranscriptionEngineOption) -> ASREngine {
+        if let loaded = loadedEngine, loaded.option == option {
+            return loaded.engine
         }
-        if asrManager == nil {
-            asrManager = AsrManager(config: .default)
-            try await asrManager!.initialize(models: asrModels!)
+        // Build fresh engine for the new option
+        let engine: ASREngine
+        switch option {
+        case .fluidAudio:
+            engine = FluidAudioEngine()
+        case .appleSpeech:
+            if #available(macOS 26, *) {
+                engine = AppleSpeechEngine()
+            } else {
+                engine = FluidAudioEngine() // fallback
+            }
+        }
+        loadedEngine = (option, engine)
+        modelsReady = false
+        return engine
+    }
+
+    // MARK: - Model loading
+
+    func ensureModelsLoaded(stateId: String, option: TranscriptionEngineOption) async throws {
+        let eng = engine(for: option)
+
+        // Load ASR engine if needed
+        if loadedEngine?.option != option || !modelsReady {
+            try await eng.ensureReady { [weak self] state in
+                self?.states[stateId] = state
+            }
         }
 
+        // Load diarizer (shared across both engines)
         if diarizerManager == nil {
+            states[stateId] = .downloadingModels
             let config = OfflineDiarizerConfig()
-            diarizerManager = OfflineDiarizerManager(config: config)
-            try await diarizerManager!.prepareModels()
+            let dm = OfflineDiarizerManager(config: config)
+            try await dm.prepareModels()
+            diarizerManager = dm
         }
 
         modelsReady = true
     }
 
+    // MARK: - Transcribe
+
     func transcribe(recording: Recording) async {
         let id = recording.id
         guard states[id] == nil || states[id] == .idle || states[id] == .done || states[id]?.isError == true else { return }
+
+        let option = appSettings?.transcriptionEngine ?? .fluidAudio
 
         do {
             // Step 1: Extract audio tracks
@@ -74,7 +75,6 @@ final class TranscriptionManager: ObservableObject {
             let systemAudioURL = recording.folderURL.appendingPathComponent("audio-system.m4a")
             let micAudioURL = recording.folderURL.appendingPathComponent("audio-mic.m4a")
 
-            // Check how many audio tracks exist
             let asset = AVAsset(url: recording.videoURL)
             let audioTracks = try await asset.loadTracks(withMediaType: .audio)
             let hasMicTrack = audioTracks.count >= 2
@@ -84,71 +84,63 @@ final class TranscriptionManager: ObservableObject {
                 let channels = desc.first.flatMap { CMAudioFormatDescriptionGetStreamBasicDescription($0)?.pointee.mChannelsPerFrame } ?? 0
                 DebugLog.shared.send("[Transcription] Audio track \(i): trackID=\(track.trackID), channels=\(channels)")
             }
-            DebugLog.shared.send("[Transcription] Found \(audioTracks.count) audio track(s), hasMicTrack=\(hasMicTrack)")
+            DebugLog.shared.send("[Transcription] Found \(audioTracks.count) audio track(s), hasMicTrack=\(hasMicTrack), engine=\(option.displayName)")
 
-            // Extract system audio (track 0)
             if !FileManager.default.fileExists(atPath: systemAudioURL.path) {
                 try await extractAudioTrack(from: recording.videoURL, trackIndex: 0, to: systemAudioURL)
             }
-
-            // Extract mic audio (track 1) if available
             if hasMicTrack && !FileManager.default.fileExists(atPath: micAudioURL.path) {
                 try await extractAudioTrack(from: recording.videoURL, trackIndex: 1, to: micAudioURL)
             }
 
             // Step 2: Load models
-            try await ensureModelsLoaded(stateId: id)
+            try await ensureModelsLoaded(stateId: id, option: option)
 
-            guard let asr = asrManager, let diarizer = diarizerManager else {
+            guard let diarizer = diarizerManager else {
                 throw TranscriptionError.modelNotLoaded
             }
 
-            // Step 3: Transcribe system audio (remote speakers)
+            let eng = engine(for: option)
+
+            // Step 3: Transcribe system audio
             states[id] = .transcribing(progress: 0.2)
-            let systemAsrResult = try await asr.transcribe(systemAudioURL)
+            let systemAsr = try await eng.transcribe(audioURL: systemAudioURL)
             states[id] = .transcribing(progress: 0.4)
 
-            // Step 4: Diarize system audio
+            // Step 4: Diarize system audio (always via FluidAudio)
             states[id] = .diarizing
             let diarizationResult = try await diarizer.process(systemAudioURL)
 
-            // Step 5: Transcribe mic audio (local speaker) if available
-            var micAsrResult: ASRResult?
+            // Step 5: Transcribe mic audio
+            var micAsr: ASROutput?
             if hasMicTrack {
                 states[id] = .transcribing(progress: 0.7)
-                // Verify mic file was extracted and has content
                 let micAttrs = try? FileManager.default.attributesOfItem(atPath: micAudioURL.path)
                 let micSize = (micAttrs?[.size] as? Int) ?? 0
                 DebugLog.shared.send("[Transcription] Mic audio file size: \(micSize) bytes")
 
-                micAsrResult = try await asr.transcribe(micAudioURL)
-                let micText = micAsrResult?.text ?? ""
-                let micTokenCount = micAsrResult?.tokenTimings?.count ?? 0
-                DebugLog.shared.send("[Transcription] Mic ASR text (\(micText.count) chars, \(micTokenCount) tokens): \(micText.prefix(200))")
+                let result = try await eng.transcribe(audioURL: micAudioURL)
+                DebugLog.shared.send("[Transcription] Mic ASR text (\(result.text.count) chars, \(result.wordTimings?.count ?? 0) words): \(result.text.prefix(200))")
+                micAsr = result
             }
 
             // Step 6: Build structured transcript
             states[id] = .transcribing(progress: 0.9)
-
-            // Match remote speakers against known profiles
             let speakerMatches = matchSpeakers(diarization: diarizationResult)
 
             let transcript = Self.buildTwoTrackTranscript(
-                systemAsr: systemAsrResult,
-                micAsr: micAsrResult,
+                systemAsr: systemAsr,
+                micAsr: micAsr,
                 diarization: diarizationResult,
                 speakerMatches: speakerMatches,
                 recordingId: id
             )
 
-            // Save as JSON
             let encoder = JSONEncoder()
             encoder.dateEncodingStrategy = .iso8601
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
             let data = try encoder.encode(transcript)
             try data.write(to: recording.transcriptURL, options: .atomic)
-
-            // Keep temp audio files for debugging (audio-system.m4a, audio-mic.m4a)
 
             states[id] = .done
         } catch {
@@ -160,13 +152,9 @@ final class TranscriptionManager: ObservableObject {
 
     private func matchSpeakers(diarization: DiarizationResult) -> [String: SpeakerMatch] {
         var matches: [String: SpeakerMatch] = [:]
-        guard let profiles = speakerProfileStore?.profiles, !profiles.isEmpty else {
-            return matches
-        }
+        guard let profiles = speakerProfileStore?.profiles, !profiles.isEmpty else { return matches }
 
-        // Get unique speaker IDs and their embeddings from diarization
         let speakerEmbeddings = diarization.speakerDatabase ?? [:]
-
         for (speakerId, embedding) in speakerEmbeddings {
             var bestMatch: SpeakerProfile?
             var bestDistance: Float = Float.greatestFiniteMagnitude
@@ -180,7 +168,6 @@ final class TranscriptionManager: ObservableObject {
                 }
             }
 
-            // Threshold for matching (lower = stricter)
             if bestDistance < 0.5, let match = bestMatch {
                 matches[speakerId] = SpeakerMatch(
                     profileId: match.id.uuidString,
@@ -189,7 +176,6 @@ final class TranscriptionManager: ObservableObject {
                 )
             }
         }
-
         return matches
     }
 
@@ -210,8 +196,6 @@ final class TranscriptionManager: ObservableObject {
 
     // MARK: - Audio Extraction
 
-    /// Extract a specific audio track by index from the video file.
-    /// trackIndex 0 = system audio, trackIndex 1 = mic audio.
     private func extractAudioTrack(from videoURL: URL, trackIndex: Int, to outputURL: URL) async throws {
         let asset = AVAsset(url: videoURL)
         let audioTracks = try await asset.loadTracks(withMediaType: .audio)
@@ -247,7 +231,6 @@ final class TranscriptionManager: ObservableObject {
         try? FileManager.default.removeItem(at: outputURL)
         exportSession.outputFileType = .m4a
         exportSession.outputURL = outputURL
-
         await exportSession.export()
 
         guard exportSession.status == .completed else {
@@ -255,20 +238,14 @@ final class TranscriptionManager: ObservableObject {
         }
     }
 
-    /// Legacy: extract first audio track (system audio)
-    private func extractAudio(from videoURL: URL, to outputURL: URL) async throws {
-        try await extractAudioTrack(from: videoURL, trackIndex: 0, to: outputURL)
-    }
-
     // MARK: - Build Structured Transcript
 
     static func buildTranscript(
-        asr: ASRResult,
+        asr: ASROutput,
         diarization: DiarizationResult,
         speakerMatches: [String: SpeakerMatch],
         recordingId: String
     ) -> Transcript {
-        // Build speaker list
         let uniqueSpeakerIds = Array(Set(diarization.segments.map { $0.speakerId })).sorted()
         var speakers: [TranscriptSpeaker] = []
         for (index, speakerId) in uniqueSpeakerIds.enumerated() {
@@ -280,25 +257,18 @@ final class TranscriptionManager: ObservableObject {
                     color: index % TranscriptSpeaker.colors.count
                 ))
             } else {
-                let name = Self.defaultSpeakerName(index: index)
                 speakers.append(TranscriptSpeaker(
                     id: speakerId,
-                    name: name,
+                    name: Self.defaultSpeakerName(index: index),
                     color: index % TranscriptSpeaker.colors.count
                 ))
             }
         }
 
-        // Build segments by aligning tokens with speaker segments
         var segments: [TranscriptSegment] = []
-
-        if let tokenTimings = asr.tokenTimings, !tokenTimings.isEmpty {
-            segments = alignTokensWithSpeakers(
-                tokens: tokenTimings,
-                speakers: diarization.segments
-            )
+        if let wordTimings = asr.wordTimings, !wordTimings.isEmpty {
+            segments = alignWordsWithSpeakers(words: wordTimings, speakers: diarization.segments)
         } else {
-            // Fallback: one segment per diarization segment with full text
             for segment in diarization.segments {
                 segments.append(TranscriptSegment(
                     speakerId: segment.speakerId,
@@ -307,7 +277,6 @@ final class TranscriptionManager: ObservableObject {
                     text: ""
                 ))
             }
-            // Put full text in first segment if no alignment possible
             if !segments.isEmpty {
                 segments[0] = TranscriptSegment(
                     speakerId: segments[0].speakerId,
@@ -318,7 +287,6 @@ final class TranscriptionManager: ObservableObject {
             }
         }
 
-        // Apply ITN (Inverse Text Normalization) to each segment
         for i in 0..<segments.count {
             let normalized = TextNormalizer.shared.normalizeSentence(segments[i].text)
             segments[i] = TranscriptSegment(
@@ -339,8 +307,8 @@ final class TranscriptionManager: ObservableObject {
         )
     }
 
-    static func alignTokensWithSpeakers(
-        tokens: [TokenTiming],
+    static func alignWordsWithSpeakers(
+        words: [WordTiming],
         speakers: [TimedSpeakerSegment]
     ) -> [TranscriptSegment] {
         var segments: [TranscriptSegment] = []
@@ -349,30 +317,28 @@ final class TranscriptionManager: ObservableObject {
         var segmentStart: TimeInterval = 0
         var segmentEnd: TimeInterval = 0
 
-        for token in tokens {
-            let midpoint = (token.startTime + token.endTime) / 2.0
+        for word in words {
+            let midpoint = (word.startTime + word.endTime) / 2.0
             let speaker = findSpeaker(at: Float(midpoint), in: speakers)
 
             if speaker != currentSpeaker {
-                // Flush previous segment
                 if let prev = currentSpeaker, !currentText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     segments.append(TranscriptSegment(
                         speakerId: prev,
                         startTime: segmentStart,
                         endTime: segmentEnd,
                         text: currentText.trimmingCharacters(in: .whitespacesAndNewlines),
-                        confidence: token.confidence
+                        confidence: word.confidence
                     ))
                 }
                 currentSpeaker = speaker
                 currentText = ""
-                segmentStart = token.startTime
+                segmentStart = word.startTime
             }
-            currentText += token.token
-            segmentEnd = token.endTime
+            currentText += word.word
+            segmentEnd = word.endTime
         }
 
-        // Flush last segment
         if let prev = currentSpeaker, !currentText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             segments.append(TranscriptSegment(
                 speakerId: prev,
@@ -405,13 +371,12 @@ final class TranscriptionManager: ObservableObject {
     private static let localSpeakerId = "__local_mic__"
 
     static func buildTwoTrackTranscript(
-        systemAsr: ASRResult,
-        micAsr: ASRResult?,
+        systemAsr: ASROutput,
+        micAsr: ASROutput?,
         diarization: DiarizationResult,
         speakerMatches: [String: SpeakerMatch],
         recordingId: String
     ) -> Transcript {
-        // Build remote speaker segments from system audio + diarization
         let remoteTranscript = buildTranscript(
             asr: systemAsr,
             diarization: diarization,
@@ -421,27 +386,23 @@ final class TranscriptionManager: ObservableObject {
 
         DebugLog.shared.send("[Transcription] Remote segments: \(remoteTranscript.segments.count), speakers: \(remoteTranscript.speakers.map { $0.name })")
 
-        // If no mic track, just return remote-only transcript
         guard let micAsr = micAsr else {
             DebugLog.shared.send("[Transcription] No mic ASR, returning remote-only transcript")
             return remoteTranscript
         }
 
-        DebugLog.shared.send("[Transcription] Mic ASR text: '\(micAsr.text.prefix(100))', tokens: \(micAsr.tokenTimings?.count ?? 0)")
+        DebugLog.shared.send("[Transcription] Mic ASR text: '\(micAsr.text.prefix(100))', words: \(micAsr.wordTimings?.count ?? 0)")
 
-        // Build local (mic) segments — all attributed to local speaker
         var micSegments: [TranscriptSegment] = []
-        if let tokenTimings = micAsr.tokenTimings, !tokenTimings.isEmpty {
-            // Group tokens into sentence-like segments (flush every ~10s or on long pause)
+        if let wordTimings = micAsr.wordTimings, !wordTimings.isEmpty {
             var currentText = ""
             var segStart: TimeInterval = 0
             var segEnd: TimeInterval = 0
             var lastEnd: TimeInterval = 0
 
-            for token in tokenTimings {
-                let gap = token.startTime - lastEnd
-                // Start new segment on large gap (>1s) or if segment is long (>10s)
-                if !currentText.isEmpty && (gap > 1.0 || (token.startTime - segStart) > 10.0) {
+            for word in wordTimings {
+                let gap = word.startTime - lastEnd
+                if !currentText.isEmpty && (gap > 1.0 || (word.startTime - segStart) > 10.0) {
                     let trimmed = currentText.trimmingCharacters(in: .whitespacesAndNewlines)
                     if !trimmed.isEmpty {
                         micSegments.append(TranscriptSegment(
@@ -452,16 +413,14 @@ final class TranscriptionManager: ObservableObject {
                         ))
                     }
                     currentText = ""
-                    segStart = token.startTime
+                    segStart = word.startTime
                 }
-                if currentText.isEmpty {
-                    segStart = token.startTime
-                }
-                currentText += token.token
-                segEnd = token.endTime
-                lastEnd = token.endTime
+                if currentText.isEmpty { segStart = word.startTime }
+                currentText += word.word
+                segEnd = word.endTime
+                lastEnd = word.endTime
             }
-            // Flush last
+
             let trimmed = currentText.trimmingCharacters(in: .whitespacesAndNewlines)
             if !trimmed.isEmpty {
                 micSegments.append(TranscriptSegment(
@@ -472,7 +431,6 @@ final class TranscriptionManager: ObservableObject {
                 ))
             }
         } else if !micAsr.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            // No token timings — single segment for all mic text
             micSegments.append(TranscriptSegment(
                 speakerId: localSpeakerId,
                 startTime: 0,
@@ -482,15 +440,10 @@ final class TranscriptionManager: ObservableObject {
         }
 
         DebugLog.shared.send("[Transcription] Built \(micSegments.count) mic segments")
-        for (i, seg) in micSegments.enumerated() {
-            DebugLog.shared.send("[Transcription]   mic[\(i)]: \(String(format: "%.1f", seg.startTime))-\(String(format: "%.1f", seg.endTime))s '\(seg.text.prefix(60))'")
-        }
 
-        // Merge and sort all segments chronologically
         var allSegments = remoteTranscript.segments + micSegments
         allSegments.sort { $0.startTime < $1.startTime }
 
-        // Build speaker list: keep remote speakers + add "Me"
         var speakers = remoteTranscript.speakers
         if !micSegments.isEmpty {
             speakers.append(TranscriptSpeaker(
@@ -510,6 +463,8 @@ final class TranscriptionManager: ObservableObject {
     }
 }
 
+// MARK: - Supporting types
+
 struct SpeakerMatch {
     let profileId: String
     let name: String
@@ -520,12 +475,14 @@ enum TranscriptionError: LocalizedError {
     case modelNotLoaded
     case audioExtractionFailed
     case audioTrackNotFound(Int)
+    case engineNotAvailable
 
     var errorDescription: String? {
         switch self {
         case .modelNotLoaded: return "AI models failed to load."
         case .audioExtractionFailed: return "Could not extract audio from video."
         case .audioTrackNotFound(let index): return "Audio track \(index) not found in video."
+        case .engineNotAvailable: return "Apple SpeechAnalyzer requires the macOS 26 SDK. Enable SPEECH_ANALYZER_AVAILABLE in project.yml."
         }
     }
 }
