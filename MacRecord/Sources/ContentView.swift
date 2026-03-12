@@ -16,58 +16,7 @@ struct ContentView: View {
     @State private var mediaPanelWidth: CGFloat = 340
 
     var body: some View {
-        if #available(macOS 15, *) {
-            appContent
-        } else {
-            macOSUpdateRequiredView
-        }
-    }
-
-    @ViewBuilder
-    private var macOSUpdateRequiredView: some View {
-        VStack(spacing: 0) {
-            ZStack {
-                WindowDragArea()
-                HStack(spacing: 8) {
-                    TrafficLightButtons()
-                    Spacer()
-                }
-                .padding(.horizontal, 18)
-            }
-            .frame(height: 42)
-            .padding(.top, 2)
-
-            Spacer()
-
-            VStack(spacing: 20) {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.system(size: 48))
-                    .foregroundStyle(SpokeTheme.warning)
-
-                Text("macOS 15 Required")
-                    .font(.system(size: 24, weight: .bold))
-                    .foregroundStyle(SpokeTheme.textPrimary)
-
-                Text("Spoke requires macOS 15 (Sequoia) or later for reliable audio capture.\nPlease update your Mac to use this app.")
-                    .font(.system(size: 14))
-                    .foregroundStyle(SpokeTheme.textSecondary)
-                    .multilineTextAlignment(.center)
-                    .lineSpacing(4)
-
-                Button("Open Software Update") {
-                    NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preferences.softwareupdate")!)
-                }
-                .buttonStyle(SpokeAccentButtonStyle())
-                .padding(.top, 8)
-            }
-            .padding(.horizontal, 40)
-
-            Spacer()
-            Spacer()
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(SpokeTheme.sidebarBg)
-        .clipShape(RoundedRectangle(cornerRadius: 18))
+        appContent
     }
 
     @ViewBuilder

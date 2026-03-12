@@ -2,13 +2,13 @@ name: MacRecord
 options:
   bundleIdPrefix: com.tinyworks
   deploymentTarget:
-    macOS: "14.0"
+    macOS: "15.0"
   xcodeVersion: "16.0"
   generateEmptyDirectories: true
 settings:
   base:
     SWIFT_VERSION: "5.9"
-    MACOSX_DEPLOYMENT_TARGET: "14.0"
+    MACOSX_DEPLOYMENT_TARGET: "15.0"
 packages:
   FluidAudio:
     url: https://github.com/FluidInference/FluidAudio.git
@@ -33,7 +33,7 @@ targets:
         CFBundlePackageType: APPL
         CFBundleExecutable: MacRecord
         CFBundleIconName: AppIcon
-        LSMinimumSystemVersion: "14.0"
+        LSMinimumSystemVersion: "15.0"
         NSMicrophoneUsageDescription: "MacRecord needs microphone access to record audio during screen capture."
     entitlements:
       path: MacRecord/Resources/MacRecord.entitlements
