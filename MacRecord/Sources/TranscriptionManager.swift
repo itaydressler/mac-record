@@ -8,48 +8,31 @@ final class TranscriptionManager: ObservableObject {
     @Published var modelsReady = false
 
     var speakerProfileStore: SpeakerProfileStore?
-    var appSettings: AppSettings?
 
-    // Active engine + the option it was built for (nil = not loaded yet)
-    private var loadedEngine: (option: TranscriptionEngineOption, engine: ASREngine)?
+    private var loadedEngine: ASREngine?
     private var diarizerManager: OfflineDiarizerManager?
 
     // MARK: - Engine management
 
-    private func engine(for option: TranscriptionEngineOption) -> ASREngine {
-        if let loaded = loadedEngine, loaded.option == option {
-            return loaded.engine
-        }
-        // Build fresh engine for the new option
-        let engine: ASREngine
-        switch option {
-        case .fluidAudio:
-            engine = FluidAudioEngine()
-        case .appleSpeech:
-            if #available(macOS 26, *) {
-                engine = AppleSpeechEngine()
-            } else {
-                engine = FluidAudioEngine() // fallback
-            }
-        }
-        loadedEngine = (option, engine)
+    private func engine() -> ASREngine {
+        if let loaded = loadedEngine { return loaded }
+        let engine = FluidAudioEngine()
+        loadedEngine = engine
         modelsReady = false
         return engine
     }
 
     // MARK: - Model loading
 
-    func ensureModelsLoaded(stateId: String, option: TranscriptionEngineOption) async throws {
-        let eng = engine(for: option)
+    func ensureModelsLoaded(stateId: String) async throws {
+        let eng = engine()
 
-        // Load ASR engine if needed
-        if loadedEngine?.option != option || !modelsReady {
+        if !modelsReady {
             try await eng.ensureReady { [weak self] state in
                 self?.states[stateId] = state
             }
         }
 
-        // Load diarizer (shared across both engines)
         if diarizerManager == nil {
             states[stateId] = .downloadingModels
             let config = OfflineDiarizerConfig()
@@ -67,8 +50,6 @@ final class TranscriptionManager: ObservableObject {
         let id = recording.id
         guard states[id] == nil || states[id] == .idle || states[id] == .done || states[id]?.isError == true else { return }
 
-        let option = appSettings?.transcriptionEngine ?? .fluidAudio
-
         do {
             // Step 1: Extract audio tracks
             states[id] = .extractingAudio
@@ -84,7 +65,7 @@ final class TranscriptionManager: ObservableObject {
                 let channels = desc.first.flatMap { CMAudioFormatDescriptionGetStreamBasicDescription($0)?.pointee.mChannelsPerFrame } ?? 0
                 DebugLog.shared.send("[Transcription] Audio track \(i): trackID=\(track.trackID), channels=\(channels)")
             }
-            DebugLog.shared.send("[Transcription] Found \(audioTracks.count) audio track(s), hasMicTrack=\(hasMicTrack), engine=\(option.displayName)")
+            DebugLog.shared.send("[Transcription] Found \(audioTracks.count) audio track(s), hasMicTrack=\(hasMicTrack)")
 
             if !FileManager.default.fileExists(atPath: systemAudioURL.path) {
                 try await extractAudioTrack(from: recording.videoURL, trackIndex: 0, to: systemAudioURL)
@@ -94,13 +75,13 @@ final class TranscriptionManager: ObservableObject {
             }
 
             // Step 2: Load models
-            try await ensureModelsLoaded(stateId: id, option: option)
+            try await ensureModelsLoaded(stateId: id)
 
             guard let diarizer = diarizerManager else {
                 throw TranscriptionError.modelNotLoaded
             }
 
-            let eng = engine(for: option)
+            let eng = engine()
 
             // Step 3: Transcribe system audio
             states[id] = .transcribing(progress: 0.2)
@@ -475,14 +456,12 @@ enum TranscriptionError: LocalizedError {
     case modelNotLoaded
     case audioExtractionFailed
     case audioTrackNotFound(Int)
-    case engineNotAvailable
 
     var errorDescription: String? {
         switch self {
         case .modelNotLoaded: return "AI models failed to load."
         case .audioExtractionFailed: return "Could not extract audio from video."
         case .audioTrackNotFound(let index): return "Audio track \(index) not found in video."
-        case .engineNotAvailable: return "Apple SpeechAnalyzer requires the macOS 26 SDK. Enable SPEECH_ANALYZER_AVAILABLE in project.yml."
         }
     }
 }

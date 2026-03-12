@@ -22,7 +22,6 @@
 		9F78DEC988718162D52C56BD /* SpeakerProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = D35DAC00BAF03AD82E03B212 /* SpeakerProfile.swift */; };
 		A0ED4076B514E3DC6802AAD1 /* FluidAudio in Frameworks */ = {isa = PBXBuildFile; productRef = 5B11279E667730AAAD416376 /* FluidAudio */; };
 		D34DED118B5BF80DEA5EE5C6 /* TranscriptModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0BC06387F2C5276482B67 /* TranscriptModels.swift */; };
-		DB1A0E9F881BA97E84BC86EC /* AppleSpeechEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CFAE4880200FDC897AD3406 /* AppleSpeechEngine.swift */; };
 		E2212BC36C9DF938BCE394BE /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B82079A97D64917C1B3E8A2 /* ContentView.swift */; };
 		E7AEB30A8030DEE5BC6C6192 /* AppTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29B3F6713B7AFE6DC9993A80 /* AppTheme.swift */; };
 		F790351084DCDB071D63CF8C /* FluidAudioEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F5CD044F28AA984CCCB0C0E /* FluidAudioEngine.swift */; };
@@ -37,7 +36,6 @@
 		40B8023FE9D23F8ED6FF982D /* MacRecord.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MacRecord.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		43EF9BA12E121807C48DF3BB /* RecordingDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingDetailView.swift; sourceTree = "<group>"; };
 		62B272E45DD8C7BEF1CCE97C /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		6CFAE4880200FDC897AD3406 /* AppleSpeechEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleSpeechEngine.swift; sourceTree = "<group>"; };
 		6DC77811ACC582E20900BE61 /* TranscriptionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptionManager.swift; sourceTree = "<group>"; };
 		73CCEB738B652D842F5A0102 /* ASREngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ASREngine.swift; sourceTree = "<group>"; };
 		796E1343B28F6B87DCFAC8EA /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
@@ -65,7 +63,6 @@
 		1868A814A562DF630E7CA22D /* Sources */ = {
 			isa = PBXGroup;
 			children = (
-				6CFAE4880200FDC897AD3406 /* AppleSpeechEngine.swift */,
 				FA82DF0E54E18159CE2FA945 /* AppSettings.swift */,
 				29B3F6713B7AFE6DC9993A80 /* AppTheme.swift */,
 				73CCEB738B652D842F5A0102 /* ASREngine.swift */,
@@ -192,7 +189,6 @@
 				2D31D2D4B280E21F91999C21 /* ASREngine.swift in Sources */,
 				3263945DF275D3CC7C7B87BC /* AppSettings.swift in Sources */,
 				E7AEB30A8030DEE5BC6C6192 /* AppTheme.swift in Sources */,
-				DB1A0E9F881BA97E84BC86EC /* AppleSpeechEngine.swift in Sources */,
 				E2212BC36C9DF938BCE394BE /* ContentView.swift in Sources */,
 				9AA43CB730097E5DE3976699 /* DebugLog.swift in Sources */,
 				67BF9A855D7735122CA982AC /* FloatingToolbar.swift in Sources */,
@@ -290,7 +286,6 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				OTHER_SWIFT_FLAGS = "$(inherited) -DSPEECH_ANALYZER_AVAILABLE";
 				PRODUCT_BUNDLE_IDENTIFIER = com.tinyworks.MacRecord;
 				SDKROOT = macosx;
 			};
@@ -367,7 +362,6 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				OTHER_SWIFT_FLAGS = "$(inherited) -DSPEECH_ANALYZER_AVAILABLE";
 				PRODUCT_BUNDLE_IDENTIFIER = com.tinyworks.MacRecord;
 				SDKROOT = macosx;
 			};

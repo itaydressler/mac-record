@@ -2,6 +2,7 @@
 .DS_Store
 DerivedData/
 build/
+spoke-mcp/.build/
 *.xcodeproj/xcuserdata/
 *.xcodeproj/project.xcworkspace/xcuserdata/
 

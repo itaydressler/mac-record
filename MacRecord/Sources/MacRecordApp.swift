@@ -16,11 +16,9 @@ struct MacRecordApp: App {
                 .environmentObject(recordingsStore)
                 .environmentObject(transcriptionManager)
                 .environmentObject(speakerProfileStore)
-                .environmentObject(appSettings)
                 .frame(minWidth: 900, minHeight: 560)
                 .onAppear {
                     transcriptionManager.speakerProfileStore = speakerProfileStore
-                    transcriptionManager.appSettings = appSettings
                 }
                 .onReceive(recordingManager.$state) { newState in
                     if newState == .recording {

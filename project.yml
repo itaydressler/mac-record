@@ -50,4 +50,3 @@ targets:
         CODE_SIGN_IDENTITY: "Developer ID Application: BASE LABS LTD (SDKXSX2NHQ)"
         DEVELOPMENT_TEAM: SDKXSX2NHQ
         CODE_SIGN_STYLE: Manual
-        OTHER_SWIFT_FLAGS: $(inherited) -DSPEECH_ANALYZER_AVAILABLE

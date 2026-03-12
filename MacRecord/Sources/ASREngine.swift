@@ -57,34 +57,3 @@ protocol ASREngine: AnyObject {
     func transcribe(audioURL: URL) async throws -> ASROutput
 }
 
-// MARK: - Engine option
-
-enum TranscriptionEngineOption: String, CaseIterable, Identifiable {
-    case fluidAudio = "fluidAudio"
-    case appleSpeech = "appleSpeech"
-
-    var id: String { rawValue }
-
-    var displayName: String {
-        switch self {
-        case .fluidAudio: return "FluidAudio (Parakeet)"
-        case .appleSpeech: return "Apple SpeechAnalyzer"
-        }
-    }
-
-    var description: String {
-        switch self {
-        case .fluidAudio: return "Open-source Parakeet model. Works on macOS 15+."
-        case .appleSpeech: return "Apple's on-device model. Requires macOS 26+."
-        }
-    }
-
-    var isAvailable: Bool {
-        switch self {
-        case .fluidAudio: return true
-        case .appleSpeech:
-            if #available(macOS 26, *) { return true }
-            return false
-        }
-    }
-}

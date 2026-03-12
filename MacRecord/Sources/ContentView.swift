@@ -6,7 +6,6 @@ struct ContentView: View {
     @EnvironmentObject var recordingsStore: RecordingsStore
     @EnvironmentObject var transcriptionManager: TranscriptionManager
     @EnvironmentObject var speakerProfileStore: SpeakerProfileStore
-    @EnvironmentObject var appSettings: AppSettings
     @State private var selectedRecording: Recording?
     @State private var showSourcePicker = false
     @State private var showSpeakerProfiles = false
@@ -119,7 +118,6 @@ struct ContentView: View {
         }
         .sheet(isPresented: $showSettings) {
             SettingsView()
-                .environmentObject(appSettings)
                 .onExitCommand { showSettings = false }
         }
         .onChange(of: selectedRecording?.id) { _, newId in
