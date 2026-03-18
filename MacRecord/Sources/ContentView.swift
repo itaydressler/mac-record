@@ -80,9 +80,12 @@ struct ContentView: View {
             if newState == .idle {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
                     recordingsStore.refresh()
-                    if let latest = recordingsStore.recordings.first, !latest.hasTranscription {
-                        Task {
-                            await transcriptionManager.transcribe(recording: latest)
+                    if let latest = recordingsStore.recordings.first {
+                        selectedRecording = latest
+                        if !latest.hasTranscription {
+                            Task {
+                                await transcriptionManager.transcribe(recording: latest)
+                            }
                         }
                     }
                 }
